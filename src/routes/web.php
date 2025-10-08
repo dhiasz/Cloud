@@ -15,6 +15,9 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/dashboard', [FileController::class, 'index'])->name('dashboard');
     Route::post('/upload', [FileController::class, 'upload'])->name('upload');
     Route::get('/download/{filename}', [FileController::class, 'download'])->name('download');
+    Route::post('/folder/create', [FileController::class, 'createFolder'])->name('folder.create');
+    Route::get('/preview/{filename}', [FileController::class, 'preview'])->name('preview');
+    Route::delete('/delete/{filename}', [FileController::class, 'delete'])->name('file.delete');
 
     // Profile (default Breeze)
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');

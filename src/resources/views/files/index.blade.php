@@ -1,55 +1,69 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cloud Drive</title>
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
-</head>
-<body class="bg-gray-100 min-h-screen flex flex-col">
+@extends('layouts.app')
 
-    <!-- Navbar -->
-    <header class="bg-white shadow p-4 flex justify-between items-center">
-        <h1 class="text-2xl font-semibold text-gray-800">☁️ {{ Auth::user()->name }}'s Cloud</h1>
-        <form method="POST" action="{{ route('logout') }}">
+@section('content')
+<div class="container mx-auto">
+
+    <!-- Header Upload & Folder -->
+    <div class="flex justify-end gap-4 mb-6">
+        <form action="{{ route('upload') }}" method="POST" enctype="multipart/form-data" class="flex gap-2">
             @csrf
-            <button type="submit" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">Logout</button>
+            <input type="file" name="file" required class="border border-gray-300 rounded px-2 py-1">
+            <button class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Upload File</button>
         </form>
-    </header>
 
-    <!-- Main Content -->
-    <main class="flex-1 p-6">
-        <!-- Upload Form -->
-        <div class="mb-6">
-            @if(session('success'))
-                <div class="bg-green-100 text-green-800 px-4 py-2 rounded mb-4">{{ session('success') }}</div>
-            @endif
+        <form action="{{ route('folder.create') }}" method="POST" class="flex gap-2">
+            @csrf
+            <input type="text" name="folder_name" placeholder="Nama Folder" class="border border-gray-300 rounded px-2 py-1" required>
+            <button class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Buat Folder</button>
+        </form>
+    </div>
 
-            <form action="{{ route('upload') }}" method="POST" enctype="multipart/form-data" class="flex items-center gap-2">
-                @csrf
-                <input type="file" name="file" required class="border border-gray-300 rounded px-2 py-1 w-full">
-                <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Upload</button>
-            </form>
-        </div>
+    <!-- Grid Horizontal Konsisten -->
+    <div class="flex overflow-x-auto gap-4 py-2">
+                <!-- Folder -->
+        @foreach($folders as $folder)
+            <div class="flex flex-col items-center justify-between min-h-[180px] p-2 hover:bg-gray-50 rounded transition cursor-pointer"
+                onclick="window.location='{{ route('files.index', ['folder' => $currentFolder ? $currentFolder.'/'.$folder : $folder]) }}'">
+                <img src="{{ asset('images/folder.png') }}" class="h-24 w-24 mb-2 object-contain" alt="Folder">
+                <!-- Area teks tetap tinggi 20px -->
+                <p class="truncate text-center text-sm w-full h-5">{{ $folder }}</p>
+            </div>
+        @endforeach
 
-        <!-- Files Grid -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            @forelse($files as $file)
-                <div class="bg-white shadow rounded p-4 flex flex-col items-center text-center">
-                    <div class="text-gray-700 font-medium truncate w-full">{{ basename($file) }}</div>
-                    <a href="{{ route('download', ['filename' => basename($file)]) }}"
-                       class="mt-2 inline-block bg-indigo-500 text-white px-3 py-1 rounded hover:bg-indigo-600">Download</a>
+        <!-- Files -->
+        @foreach($files as $file)
+            @php
+                $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+                $icon = match($ext) {
+                    'jpg','jpeg','png','gif' => 'image.png',
+                    'mp4','mkv','mov','avi' => 'video.png',
+                    'pdf' => 'pdf.png',
+                    'zip','rar','7z' => 'zip.png',
+                    default => 'file.png',
+                };
+            @endphp
+            <div class="flex flex-col items-center justify-between min-h-[180px] p-2 hover:bg-gray-50 rounded transition">
+                <img src="{{ asset('images/' . $icon) }}" class="h-24 w-24 object-contain mb-2" alt="{{ $ext }}">
+                <!-- Area teks tetap tinggi -->
+                <p class="truncate text-center text-sm w-full h-5">{{ basename($file) }}</p>
+                <div class="mt-1 flex gap-1 flex-wrap justify-center">
+                    <a href="{{ route('download', ['filename' => basename($file)]) }}" class="bg-indigo-500 text-white px-2 py-1 rounded hover:bg-indigo-600 text-xs">Download</a>
+                    @if(in_array($ext, ['jpg','jpeg','png','gif','pdf','mp4','mkv','mov','avi']))
+                        <a href="{{ route('preview', ['filename' => basename($file)]) }}" target="_blank" class="bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 text-xs">Preview</a>
+                    @endif
+                    <form action="{{ route('file.delete', ['filename' => basename($file)]) }}" method="POST">
+                        @csrf
+                        @method('DELETE')
+                        <button type="submit" class="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 text-xs">Delete</button>
+                    </form>
                 </div>
-            @empty
-                <p class="text-gray-500 col-span-full text-center mt-6">Belum ada file di cloud kamu 😇</p>
-            @endforelse
-        </div>
-    </main>
+            </div>
+@endforeach
 
-    <!-- Footer -->
-    <footer class="bg-white shadow p-4 text-center text-gray-500">
-        &copy; {{ date('Y') }} My Cloud Storage
-    </footer>
 
-</body>
-</html>
+        @if(count($folders) + count($files) === 0)
+            <p class="text-gray-500 text-center w-full">Belum ada file atau folder</p>
+        @endif
+    </div>
+</div>
+@endsection
