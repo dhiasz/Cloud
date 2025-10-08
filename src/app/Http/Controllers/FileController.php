@@ -8,11 +8,9 @@ use Illuminate\Support\Facades\Storage;
 
 class FileController extends Controller
 {
-    public function __construct()
-    {
-        $this->middleware('auth');
-    }
 
+
+    // Menampilkan file list user
     public function index()
     {
         $userFolder = 'users/' . Auth::id();
@@ -21,21 +19,22 @@ class FileController extends Controller
         return view('files.index', compact('files'));
     }
 
+    // Upload file dengan nama asli
     public function upload(Request $request)
-    {
-        $request->validate(['file' => 'required|file']);
+{
+    $request->validate(['file' => 'required|file']);
 
-        $userFolder = 'users/' . Auth::id();
+    $userFolder = 'users/' . Auth::id();
+    $filename = $request->file('file')->getClientOriginalName();
 
-        // Simpan file dengan nama asli
-        $filename = $request->file('file')->getClientOriginalName();
-        $path = $userFolder . '/' . $filename;
+    // Simpan ke MinIO dengan nama asli
+    Storage::disk('minio')->putFileAs($userFolder, $request->file('file'), $filename);
 
-        Storage::disk('minio')->put($path, file_get_contents($request->file('file')));
+    return back()->with('success', 'File berhasil diupload!');
+}
 
-        return back()->with('success', 'File berhasil diupload!');
-    }
 
+    // Download file
     public function download($filename)
     {
         $userFolder = 'users/' . Auth::id();
