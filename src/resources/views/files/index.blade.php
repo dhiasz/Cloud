@@ -20,13 +20,12 @@
 
     <!-- Grid Horizontal Konsisten -->
     <div class="flex overflow-x-auto gap-4 py-2">
-                <!-- Folder -->
+        <!-- Folders -->
         @foreach($folders as $folder)
-            <div class="flex flex-col items-center justify-between min-h-[180px] p-2 hover:bg-gray-50 rounded transition cursor-pointer"
-                onclick="window.location='{{ route('files.index', ['folder' => $currentFolder ? $currentFolder.'/'.$folder : $folder]) }}'">
-                <img src="{{ asset('images/folder.png') }}" class="h-24 w-24 mb-2 object-contain" alt="Folder">
-                <!-- Area teks tetap tinggi 20px -->
-                <p class="truncate text-center text-sm w-full h-5">{{ $folder }}</p>
+            <div class="flex flex-col items-center justify-between min-w-[160px] min-h-[200px] p-2">
+                <img src="{{ asset('images/folder.png') }}" class="h-20 w-20 object-contain mb-2" alt="Folder">
+                <!-- Area teks tetap tinggi -->
+                <p class="truncate w-full text-center text-sm h-5">{{ basename($folder) }}</p>
             </div>
         @endforeach
 
@@ -42,10 +41,10 @@
                     default => 'file.png',
                 };
             @endphp
-            <div class="flex flex-col items-center justify-between min-h-[180px] p-2 hover:bg-gray-50 rounded transition">
-                <img src="{{ asset('images/' . $icon) }}" class="h-24 w-24 object-contain mb-2" alt="{{ $ext }}">
+            <div class="flex flex-col items-center justify-between min-w-[160px] min-h-[200px] p-2">
+                <img src="{{ asset('images/' . $icon) }}" class="h-20 w-20 object-contain mb-2" alt="{{ $ext }}">
                 <!-- Area teks tetap tinggi -->
-                <p class="truncate text-center text-sm w-full h-5">{{ basename($file) }}</p>
+                <p class="truncate w-full text-center text-sm h-5">{{ basename($file) }}</p>
                 <div class="mt-1 flex gap-1 flex-wrap justify-center">
                     <a href="{{ route('download', ['filename' => basename($file)]) }}" class="bg-indigo-500 text-white px-2 py-1 rounded hover:bg-indigo-600 text-xs">Download</a>
                     @if(in_array($ext, ['jpg','jpeg','png','gif','pdf','mp4','mkv','mov','avi']))
@@ -58,8 +57,7 @@
                     </form>
                 </div>
             </div>
-@endforeach
-
+        @endforeach
 
         @if(count($folders) + count($files) === 0)
             <p class="text-gray-500 text-center w-full">Belum ada file atau folder</p>
