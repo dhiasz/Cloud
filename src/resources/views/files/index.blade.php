@@ -4,7 +4,7 @@
 <div class="container mx-auto">
 
     <!-- Header Upload & Folder -->
-    <div class="flex justify-end gap-4 mb-6">
+    <div class="flex justify-end gap-4 mb-6 bg-white">
         <form action="{{ route('upload') }}" method="POST" enctype="multipart/form-data" class="flex gap-2">
             @csrf
             <input type="file" name="file" required class="border border-gray-300 rounded px-2 py-1">
@@ -19,7 +19,7 @@
     </div>
 
     <!-- Grid Horizontal Konsisten -->
-    <div class="flex overflow-x-auto gap-4 py-2">
+    <div class="bg-white flex overflow-x-auto gap-4 py-2">
         <!-- Folders -->
         @foreach($folders as $folder)
             <div class="flex flex-col items-center justify-between min-w-[160px] min-h-[200px] p-2">

@@ -23,6 +23,14 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+
+    Route::get('/files/{folder?}', [FileController::class, 'index'])
+        ->where('folder', '.*')
+        ->name('files.index');
+
+    Route::post('/files/upload', [FileController::class, 'upload'])->name('files.upload');
+    Route::get('/files/download/{filename}', [FileController::class, 'download'])->name('files.download');
+
 });
 
 // Auth routes Breeze
