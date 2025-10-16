@@ -1,0 +1,23 @@
+FROM laravelsail/php83-composer:latest
+
+# Install Node.js & npm
+RUN apt-get update && apt-get install -y nodejs npm git unzip && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /var/www/html
+
+# Copy composer.json & install dependencies
+COPY composer.json composer.lock ./
+RUN composer install
+
+# Copy npm package.json & install node dependencies
+COPY package.json package-lock.json ./
+RUN npm install
+
+# Copy seluruh project
+COPY . .
+
+# Build assets
+RUN npm run build
+
+# Jalankan Vite + Laravel
+CMD php artisan serve --host=0.0.0.0 --port=8000
