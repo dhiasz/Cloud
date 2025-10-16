@@ -24,6 +24,7 @@ Route::middleware(['auth'])->group(function () {
     ->where('folder', '.*')
     ->name('files.index');
     
+    Route::get('/folder', [FileController::class, 'folder'])->name('files.folder');
     
     Route::post('/files/upload', [FileController::class, 'upload'])->name('files.upload');
     Route::post('/folder/create', [FileController::class, 'createFolder'])->name('folder.create');
