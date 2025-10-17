@@ -10,13 +10,26 @@ use Illuminate\Support\Str;
 class FileController extends Controller
 {
 
-public function folder()
-{
-    $disk = Storage::disk('minio'); // atau 'local'
-    $folders = $disk->directories('');
-    $files = $disk->files('');
-    return view('files.folder', compact('folders', 'files'));
-}
+    
+    public function folder($folder = null)
+    {
+        $userFolder = 'users/' . Auth::id();
+
+        // Jika ada folder, masuk ke dalamnya
+        if ($folder) {
+            $userFolder .= '/' . $folder;
+        }
+
+        // Ambil semua file dan folder di path saat ini
+        $files = Storage::disk('minio')->files($userFolder);
+        $folders = Storage::disk('minio')->directories($userFolder);
+
+        // Ambil nama folder saat ini untuk navigasi
+        $currentFolder = $folder;
+
+        return view('files.folder', compact('files', 'folders', 'currentFolder'));
+    }
+
 
     // Menampilkan file list user
     public function index($folder = null)

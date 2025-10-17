@@ -24,14 +24,16 @@ Route::middleware(['auth'])->group(function () {
     ->where('folder', '.*')
     ->name('files.index');
     
-    Route::get('/folder', [FileController::class, 'folder'])->name('files.folder');
+Route::get('/folder', [FileController::class, 'folder'])
+    ->middleware('auth')
+    ->name('files.folder');
+
     
     Route::post('/files/upload', [FileController::class, 'upload'])->name('files.upload');
     Route::post('/folder/create', [FileController::class, 'createFolder'])->name('folder.create');
     Route::get('/download/{filename}', [FileController::class, 'download'])->name('download');
     Route::get('/preview/{filename}', [FileController::class, 'preview'])->name('preview');
     Route::delete('/delete/{filename}', [FileController::class, 'delete'])->name('file.delete');
-    
     
     
     // Profile (default Breeze)
