@@ -34,6 +34,7 @@ Route::get('/folder', [FileController::class, 'folder'])
     Route::get('/download/{filename}', [FileController::class, 'download'])->name('download');
     Route::get('/preview/{filename}', [FileController::class, 'preview'])->name('preview');
     Route::delete('/delete/{filename}', [FileController::class, 'delete'])->name('file.delete');
+    Route::delete('/files/delete/{filename}', [FileController::class, 'delete'])->name('file.delete');
     
     
     // Profile (default Breeze)

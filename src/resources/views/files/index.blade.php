@@ -67,11 +67,12 @@
                             @if(in_array($ext, ['jpg','jpeg','png','gif','pdf','mp4','mkv','mov','avi']))
                                 <a href="{{ route('preview', ['filename' => basename($file)]) }}" target="_blank" class="bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 text-xs">Preview</a>
                             @endif
-                            <form action="{{ route('file.delete', ['filename' => basename($file)]) }}" method="POST">
-                                @csrf
-                                @method('DELETE')
-                                <button type="submit" class="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 text-xs">Delete</button>
-                            </form>
+                           <form action="{{ route('file.delete', ['filename' => basename($file)]) }}" method="POST">
+                            @csrf
+                            @method('DELETE')
+                            <input type="hidden" name="currentFolder" value="{{ $currentFolder }}">
+                            <button type="submit" class="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 text-xs">Delete</button>
+                        </form>
                         </div>
                     </div>
                 @endforeach

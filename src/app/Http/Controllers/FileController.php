@@ -102,10 +102,11 @@ class FileController extends Controller
     }
 
     // Hapus file
-    public function delete($filename)
+    public function delete(Request $request, $filename)
     {
         $userFolder = 'users/' . Auth::id();
-        $path = $userFolder . '/' . $filename;
+        $currentFolder = $request->input('currentFolder');
+        $path = $userFolder . ($currentFolder ? '/' . $currentFolder : '') . '/' . $filename;
 
         if (Storage::disk('minio')->exists($path)) {
             Storage::disk('minio')->delete($path);
