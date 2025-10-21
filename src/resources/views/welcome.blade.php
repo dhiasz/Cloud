@@ -14,8 +14,8 @@
         <p class="text-gray-600 mb-6">Simpan, lihat, dan download file dengan mudah.</p>
         
         <div class="flex flex-col gap-3">
-            <a href="{{ route('login') }}" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 border border-black  focus:outline focus:outline-[7px] focus:outline-none ">Login</a>
-            <a href="{{ route('register') }}" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 border border-black  focus:outline focus:outline-[7px] focus:outline-none">Register</a>
+            <a href="{{ route('login') }}" class="bg-blue-500 text-white px-4 py-2 rounded-full hover:bg-blue-600 border border-black  focus:outline focus:outline-[7px] focus:outline-none ">Login</a>
+            <a href="{{ route('register') }}" class="bg-green-500 text-white px-4 py-2 rounded-full hover:bg-green-600 border border-black  focus:outline focus:outline-[7px] focus:outline-none">Register</a>
         </div>
     </div>
 

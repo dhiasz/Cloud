@@ -10,31 +10,60 @@ use Illuminate\Support\Str;
 class FileController extends Controller
 {
 
-
-    // Menampilkan file list user
-    public function index()
+    
+    public function folder($folder = null)
     {
         $userFolder = 'users/' . Auth::id();
 
-        // Ambil semua file dan folder
+        // Jika ada folder, masuk ke dalamnya
+        if ($folder) {
+            $userFolder .= '/' . $folder;
+        }
+
+        // Ambil semua file dan folder di path saat ini
         $files = Storage::disk('minio')->files($userFolder);
         $folders = Storage::disk('minio')->directories($userFolder);
 
-        return view('files.index', compact('files', 'folders'));
+        // Ambil nama folder saat ini untuk navigasi
+        $currentFolder = $folder;
+
+        return view('files.folder', compact('files', 'folders', 'currentFolder'));
     }
 
-    // Upload file dengan nama asli
+
+    // Menampilkan file list user
+    public function index($folder = null)
+    {
+        $userFolder = 'users/' . Auth::id();
+
+        // Jika ada folder, masuk ke dalamnya
+        if ($folder) {
+            $userFolder .= '/' . $folder;
+        }
+
+        // Ambil semua file dan folder di path saat ini
+        $files = Storage::disk('minio')->files($userFolder);
+        $folders = Storage::disk('minio')->directories($userFolder);
+
+        // Ambil nama folder saat ini untuk navigasi
+        $currentFolder = $folder;
+
+        return view('files.index', compact('files', 'folders', 'currentFolder'));
+    }
+
+    // Upload file ke folder aktif
     public function upload(Request $request)
-{
-    $request->validate(['file' => 'required|file']);
+    {
+        $request->validate(['file' => 'required|file']);
 
-    $userFolder = 'users/' . Auth::id();
-    $filename = $request->file('file')->getClientOriginalName();
+        $userFolder = 'users/' . Auth::id();
+        $currentPath = $request->input('currentFolder') ?? '';
+        $targetPath = $userFolder . ($currentPath ? '/' . $currentPath : '');
 
-    // Simpan ke MinIO dengan nama asli
-    Storage::disk('minio')->putFileAs($userFolder, $request->file('file'), $filename);
+        $filename = $request->file('file')->getClientOriginalName();
+        Storage::disk('minio')->putFileAs($targetPath, $request->file('file'), $filename);
 
-    return back()->with('success', 'File berhasil diupload!');
+        return back()->with('success', 'File berhasil diupload!');
 }
 
 
