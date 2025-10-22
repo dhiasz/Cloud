@@ -1,13 +1,17 @@
 version: '3.8'
+
 services:
   app:
-    build: ./src
+    build:
+      context: ./src
+      dockerfile: Dockerfile
     container_name: cloud_app
     ports:
-      - "8000:8000"  # Laravel
-      - "5174:5174"  # Vite Dev Server
+      - "8000:8000"   # Laravel
+      - "5174:5174"   # Vite Dev Server
     volumes:
       - ./src:/var/www/html
+      - ./docker/php.ini:/usr/local/etc/php/conf.d/uploads.ini  # ⬅️ php.ini mount di sini
     depends_on:
       - mysql
       - minio

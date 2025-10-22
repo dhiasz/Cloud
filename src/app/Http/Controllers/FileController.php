@@ -52,19 +52,38 @@ class FileController extends Controller
     }
 
     // Upload file ke folder aktif
-    public function upload(Request $request)
+   public function upload(Request $request)
     {
-        $request->validate(['file' => 'required|file']);
+        $request->validate([
+            'files' => 'required',
+            'files.*' => 'file|max:5120000', // 5GB
+        ]);
 
-        $userFolder = 'users/' . Auth::id();
-        $currentPath = $request->input('currentFolder') ?? '';
-        $targetPath = $userFolder . ($currentPath ? '/' . $currentPath : '');
+        $currentFolder = $request->input('currentFolder');
+        $disk = Storage::disk('minio');
 
-        $filename = $request->file('file')->getClientOriginalName();
-        Storage::disk('minio')->putFileAs($targetPath, $request->file('file'), $filename);
+        // folder dasar user
+        $basePath = 'users/' . auth()->id();
 
-        return back()->with('success', 'File berhasil diupload!');
-}
+        // kalau ada current folder, tambahkan ke path
+        if ($currentFolder && trim($currentFolder) !== '') {
+            $basePath .= '/' . $currentFolder;
+        }
+
+        // simpan file
+        if ($request->hasFile('files')) {
+            foreach ($request->file('files') as $file) {
+                $filename = $file->getClientOriginalName();
+                $path = $basePath . '/' . $filename;
+
+                // simpan ke minio
+                $disk->put($path, file_get_contents($file));
+            }
+        }
+
+        return back()->with('success', 'Files berhasil diunggah!');
+    }
+
 
 
     // Download file
