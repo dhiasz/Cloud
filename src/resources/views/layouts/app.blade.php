@@ -52,11 +52,6 @@
 
                 <a href="#"
                     class="flex items-center gap-3 bg-white rounded-full px-5 py-2 border-[3px] border-black hover:bg-gray-100 transition shadow-md">
-                    🕒 <span class="font-medium">Terbaru</span>
-                </a>
-
-                <a href="#"
-                    class="flex items-center gap-3 bg-white rounded-full px-5 py-2 border-[3px] border-black hover:bg-gray-100 transition shadow-md">
                     ⭐ <span class="font-medium">Berbintang</span>
                 </a>
 

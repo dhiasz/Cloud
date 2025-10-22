@@ -72,14 +72,17 @@ class FileController extends Controller
 
         // simpan file
         if ($request->hasFile('files')) {
-            foreach ($request->file('files') as $file) {
-                $filename = $file->getClientOriginalName();
-                $path = $basePath . '/' . $filename;
+        foreach ($request->file('files') as $file) {
+            $filename = $file->getClientOriginalName();
+            $path = $basePath . '/' . $filename;
 
-                // simpan ke minio
-                $disk->put($path, file_get_contents($file));
-            }
+            // Gunakan stream agar tidak memakan banyak memori
+            $stream = fopen($file->getRealPath(), 'r');
+            $disk->put($path, $stream);
+            fclose($stream);
         }
+    }
+
 
         return back()->with('success', 'Files berhasil diunggah!');
     }
