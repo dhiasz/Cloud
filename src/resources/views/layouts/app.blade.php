@@ -77,14 +77,14 @@
                         class="absolute left-0 mt-2 w-64 bg-white border border-gray-300 rounded-lg shadow-lg z-10 p-4 space-y-4">
 
                         <!-- Upload -->
-                        <form action="{{ route('upload') }}" method="POST" enctype="multipart/form-data"
-                            class="flex flex-col gap-2">
+                        <form action="{{ route('files.upload') }}" method="POST" enctype="multipart/form-data" class="flex flex-col gap-2">
                             @csrf
                             <label class="text-sm font-semibold text-gray-700">Upload File</label>
-                            <input type="file" name="file" required
-                                class="border border-gray-300 rounded px-2 py-1 text-sm">
-                            <button
-                                class="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600 transition">Upload</button>
+                            {{-- ubah name jadi files[] dan tambahkan multiple --}}
+                            <input type="file" name="files[]" multiple required class="border border-gray-300 rounded px-2 py-1 text-sm">
+                            {{-- kirim currentFolder bila ada (layout tidak tahu current folder), jadi kosong --}}
+                            <input type="hidden" name="currentFolder" value="">
+                            <button class="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600 transition">Upload</button>
                         </form>
 
                         <hr>
@@ -93,11 +93,11 @@
                         <form action="{{ route('folder.create') }}" method="POST" class="flex flex-col gap-2">
                             @csrf
                             <label class="text-sm font-semibold text-gray-700">Buat Folder</label>
-                            <input type="text" name="folder_name" placeholder="Nama Folder" required
-                                class="border border-gray-300 rounded px-2 py-1 text-sm">
-                            <button
-                                class="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600 transition">Buat</button>
+                            <input type="text" name="folder_name" placeholder="Nama Folder" required class="border border-gray-300 rounded px-2 py-1 text-sm">
+                            <input type="hidden" name="currentFolder" value=""> <!-- kosong atau kirim current folder jika ada -->
+                            <button class="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600 transition">Buat</button>
                         </form>
+
                     </div>
                 </div>
             </div>

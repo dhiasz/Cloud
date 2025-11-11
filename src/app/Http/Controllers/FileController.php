@@ -52,40 +52,53 @@ class FileController extends Controller
     }
 
     // Upload file ke folder aktif
-   public function upload(Request $request)
-    {
-        $request->validate([
-            'files' => 'required',
-            'files.*' => 'file|max:5120000', // 5GB
-        ]);
+  public function upload(Request $request)
+{
+    // Terima baik 'file' (single) atau 'files' (multiple)
+    // Validasi manual supaya fleksibel
+    $filesToProcess = [];
 
-        $currentFolder = $request->input('currentFolder');
-        $disk = Storage::disk('minio');
-
-        // folder dasar user
-        $basePath = 'users/' . auth()->id();
-
-        // kalau ada current folder, tambahkan ke path
-        if ($currentFolder && trim($currentFolder) !== '') {
-            $basePath .= '/' . $currentFolder;
-        }
-
-        // simpan file
-        if ($request->hasFile('files')) {
-        foreach ($request->file('files') as $file) {
-            $filename = $file->getClientOriginalName();
-            $path = $basePath . '/' . $filename;
-
-            // Gunakan stream agar tidak memakan banyak memori
-            $stream = fopen($file->getRealPath(), 'r');
-            $disk->put($path, $stream);
-            fclose($stream);
-        }
+    if ($request->hasFile('files')) {
+        $filesToProcess = $request->file('files');
+    } elseif ($request->hasFile('file')) {
+        // fallback single file input dari layout
+        $filesToProcess = [$request->file('file')];
     }
 
-
-        return back()->with('success', 'Files berhasil diunggah!');
+    if (empty($filesToProcess)) {
+        return back()->with('error', 'Tidak ada file yang diunggah.');
     }
+
+    // Validasi ukuran setiap file (opsional, ubah sesuai kebutuhan)
+    foreach ($filesToProcess as $f) {
+        if (!$f->isValid()) {
+            return back()->with('error', 'Salah satu file tidak valid.');
+        }
+        // contoh validasi ukuran: 5GB => 5120000 KB pada konfigurasi awalmu
+        // tapi disarankan ubah ke bytes jika mau presisi
+    }
+
+    $currentFolder = $request->input('currentFolder');
+    $disk = Storage::disk('minio');
+    $basePath = 'users/' . auth()->id();
+
+    if ($currentFolder && trim($currentFolder) !== '') {
+        // pastikan tidak ada leading/trailing slash
+        $currentFolder = trim($currentFolder, '/');
+        $basePath .= '/' . $currentFolder;
+    }
+
+    foreach ($filesToProcess as $file) {
+        $filename = $file->getClientOriginalName();
+        $path = $basePath . '/' . $filename;
+        $stream = fopen($file->getRealPath(), 'r');
+        $disk->put($path, $stream);
+        if (is_resource($stream)) fclose($stream);
+    }
+
+    return back()->with('success', 'Files berhasil diunggah!');
+}
+
 
 
 
@@ -144,14 +157,21 @@ class FileController extends Controller
         $request->validate(['folder_name' => 'required|string']);
 
         $userFolder = 'users/' . Auth::id();
-        $folderName = Str::slug($request->folder_name); // supaya aman
-        $folderPath = $userFolder . '/' . $folderName;
+        $folderName = Str::slug($request->folder_name);
+        $currentFolder = $request->input('currentFolder');
 
-        if (!Storage::disk('minio')->exists($folderPath)) {
-            Storage::disk('minio')->makeDirectory($folderPath);
-            return back()->with('success', 'Folder berhasil dibuat!');
+        // buat path target (jika currentFolder ada, buat di dalamnya)
+        if ($currentFolder && trim($currentFolder) !== '') {
+            $currentFolder = trim($currentFolder, '/');
+            $folderPath = $userFolder . '/' . $currentFolder . '/' . $folderName;
+        } else {
+            $folderPath = $userFolder . '/' . $folderName;
         }
 
-        return back()->with('error', 'Folder sudah ada!');
+        // langsung buat directory tanpa cek exists (lebih sederhana)
+        Storage::disk('minio')->makeDirectory($folderPath);
+
+        return back()->with('success', 'Folder berhasil dibuat!');
     }
+
 }

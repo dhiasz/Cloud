@@ -2,9 +2,10 @@
 FROM laravelsail/php83-composer:latest
 
 # Instal dependensi tambahan (node, npm, git, unzip)
-RUN apt-get update && apt-get install -y \
-    nodejs npm git unzip \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y curl \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs
+
 
 # Set folder kerja di dalam container
 WORKDIR /var/www/html

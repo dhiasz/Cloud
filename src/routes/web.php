@@ -30,7 +30,6 @@ Route::get('/keepcloud/folder', [FileController::class, 'folder'])
 
     
     Route::post('/keepcloud/files/upload', [FileController::class, 'upload'])->name('files.upload');
-    Route::post('/keepcloud/folder/create', [FileController::class, 'createFolder'])->name('folder.create');
     Route::get('/keepcloud/download/{filename}', [FileController::class, 'download'])->name('download');
     Route::get('/keepcloud/preview/{filename}', [FileController::class, 'preview'])->name('preview');
     Route::delete('/keepcloud/delete/{filename}', [FileController::class, 'delete'])->name('file.delete');
