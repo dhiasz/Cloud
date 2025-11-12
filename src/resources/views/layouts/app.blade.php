@@ -46,29 +46,29 @@
             <!-- Tombol Menu Sidebar -->
             <div class="space-y-3">
                 <a href="{{ route('dashboard') }}"
-                    class="flex items-center gap-3 bg-white rounded-full px-5 py-2 border-[3px] border-black hover:bg-gray-100 transition shadow-md">
+                    class="flex items-start gap-3 bg-white rounded-full px-5 py-2 border-[3px] border-black hover:bg-gray-100 transition shadow-md">
                     🏠 <span class="font-medium">Beranda</span>
                 </a>
 
                 <a href="#"
-                    class="flex items-center gap-3 bg-white rounded-full px-5 py-2 border-[3px] border-black hover:bg-gray-100 transition shadow-md">
+                    class="flex items-start gap-3 bg-white rounded-full px-5 py-2 border-[3px] border-black hover:bg-gray-100 transition shadow-md">
                     ⭐ <span class="font-medium">Berbintang</span>
                 </a>
 
                 <a href="{{ route('files.folder') }}"
-                    class="flex items-center gap-3 bg-white rounded-full px-5 py-2 border-[3px] border-black hover:bg-gray-100 transition shadow-md">
+                    class="flex items-start gap-3 bg-white rounded-full px-5 py-2 border-[3px] border-black hover:bg-gray-100 transition shadow-md">
                     📁 <span class="font-medium">Penyimpanan saya</span>
                 </a>
 
                 <a href="#"
-                    class="flex items-center gap-3 bg-white rounded-full px-5 py-2 border-[3px] border-black hover:bg-gray-100 transition shadow-md">
+                    class="flex items-start gap-3 bg-white rounded-full px-5 py-2 border-[3px] border-black hover:bg-gray-100 transition shadow-md">
                     🗑️ <span class="font-medium">Sampah</span>
                 </a>
 
                 <!-- Tombol Buat -->
                 <div x-data="{ open: false }" class="relative">
                     <button @click="open = !open"
-                        class="flex items-center justify-center gap-2 bg-white border-[3px] border-black rounded-full px-5 py-2 hover:bg-gray-100 transition w-full shadow-md">
+                        class="flex items-start justify-center gap-2 bg-white border-[3px] border-black rounded-full px-5 py-2 hover:bg-gray-100 transition w-full shadow-md">
                         ➕ <span class="font-medium">Buat</span>
                     </button>
 

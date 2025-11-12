@@ -3,6 +3,11 @@
 @section('content')
 <script src="//unpkg.com/alpinejs" defer></script>
 
+@php
+    use Illuminate\Support\Facades\Auth;
+    $userPrefix = 'users/' . Auth::id() . '/';
+@endphp
+
 <div 
     x-data="fileIndex()" 
     x-init="init()"
@@ -44,44 +49,66 @@
             @endif
 
             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                <!-- Folder -->
+                {{-- Folder --}}
                 @foreach($folders as $folder)
+                    @php
+                        $folderName = basename($folder);
+                        $relativeFolderPath = trim(($currentFolder ? $currentFolder . '/' : '') . $folderName, '/');
+                    @endphp
                     <a 
-                        href="{{ route('files.index', ['folder' => trim(($currentFolder ? $currentFolder . '/' : '') . basename($folder))]) }}"
+                        href="{{ route('files.index', ['folder' => $relativeFolderPath]) }}"
                         class="flex flex-col items-center justify-between min-w-[160px] min-h-[200px] p-2 cursor-pointer hover:bg-gray-100 rounded-lg transition transform hover:scale-105"
+                        data-path="{{ $relativeFolderPath }}"
+                        data-type="folder"
+                        data-name="{{ $folderName }}"
                     >
                         <img src="{{ asset('images/folder.png') }}" class="h-20 w-20 object-contain mb-2" alt="folder">
-                        <p class="truncate w-full text-center text-sm h-5">{{ basename($folder) }}</p>
+                        <p class="truncate w-full text-center text-sm h-5">{{ $folderName }}</p>
                     </a>
                 @endforeach
 
-                <!-- Files -->
+                {{-- Files --}}
                 @foreach($files as $file)
                     @php
+                        // Pastikan relative path tanpa prefix users/{id}/
+                        if (strpos($file, $userPrefix) === 0) {
+                            $relativeFilePath = substr($file, strlen($userPrefix));
+                        } else {
+                            // jika tidak ada prefix, pakai path tanpa leading slash
+                            $relativeFilePath = ltrim($file, '/');
+                        }
+                        $filenameOnly = basename($file);
                         $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
                         $icon = match($ext) {
                             'jpg','jpeg','png','gif' => 'image.png',
                             'mp4','mkv','mov','avi' => 'video.png',
                             'pdf' => 'pdf.png',
                             'zip','rar','7z' => 'zip.png',
-                            'xlsx','xlsm','xlsb', 'xltx', 'xltm' => 'excel.png',
                             default => 'file.png',
                         };
                     @endphp
-                    <div class="flex flex-col items-center justify-between min-w-[160px] min-h-[200px] p-2 hover:bg-gray-100 rounded-lg transition transform hover:scale-105">
+
+                    <div 
+                        class="flex flex-col items-center justify-between min-w-[160px] min-h-[200px] p-2 hover:bg-gray-100 rounded-lg transition transform hover:scale-105"
+                        data-path="{{ $relativeFilePath }}"
+                        data-type="file"
+                        data-name="{{ $filenameOnly }}"
+                    >
                         <img src="{{ asset('images/' . $icon) }}" class="h-20 w-20 object-contain mb-2" alt="{{ $ext }}">
-                        <p class="truncate w-full text-center text-sm h-5">{{ basename($file) }}</p>
+                        <p class="truncate w-full text-center text-sm h-5">{{ $filenameOnly }}</p>
                         <div class="mt-1 flex gap-1 flex-wrap justify-center">
-                            <a href="{{ route('download', ['filename' => basename($file)]) }}" class="bg-indigo-500 text-white px-2 py-1 rounded hover:bg-indigo-600 text-xs">Download</a>
+                            <a href="{{ route('download', ['filename' => $filenameOnly]) }}" class="bg-indigo-500 text-white px-2 py-1 rounded hover:bg-indigo-600 text-xs">Download</a>
                             @if(in_array($ext, ['jpg','jpeg','png','gif','pdf','mp4','mkv','mov','avi']))
-                                <a href="{{ route('preview', ['filename' => basename($file)]) }}" target="_blank" class="bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 text-xs">Preview</a>
+                                <a href="{{ route('preview', ['filename' => $filenameOnly]) }}" target="_blank" class="bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 text-xs">Preview</a>
                             @endif
-                           <form action="{{ route('file.delete', ['filename' => basename($file)]) }}" method="POST">
-                            @csrf
-                            @method('DELETE')
-                            <input type="hidden" name="currentFolder" value="{{ $currentFolder }}">
-                            <button type="submit" class="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 text-xs">Delete</button>
-                        </form>
+
+                            {{-- Hidden delete form (keperluan fallback jika perlu) --}}
+                            <form action="{{ route('file.delete', ['filename' => $filenameOnly]) }}" method="POST" style="display:none;">
+                                @csrf
+                                @method('DELETE')
+                                <input type="hidden" name="currentFolder" value="{{ $currentFolder }}">
+                                <button type="submit" class="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 text-xs">Delete</button>
+                            </form>
                         </div>
                     </div>
                 @endforeach
@@ -89,7 +116,7 @@
         </div>
     </div>
 
-    <!-- Context Menu (muncul tepat di pointer; punya key untuk replay anim) -->
+    {{-- Context Menu (muncul tepat di pointer; replay anim saat klik kanan ulang) --}}
     <template x-if="true">
         <div
             x-show="showMenu"
@@ -105,8 +132,9 @@
             @click.outside="closeMenu"
             style="display: none;"
         >
-            <!-- Upload form (multiple) -->
+            {{-- Upload form (multiple) --}}
             <form 
+                id="ctx-upload-form"
                 action="{{ route('files.upload') }}" 
                 method="POST" 
                 enctype="multipart/form-data" 
@@ -115,7 +143,6 @@
                 @csrf
                 <input type="hidden" name="currentFolder" value="{{ $currentFolder ?? '' }}">
                 
-                <!-- Upload Multiple -->
                 <label class="cursor-pointer bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium px-4 py-2 rounded-md w-full text-center transition">
                     Upload Files
                     <input 
@@ -123,19 +150,35 @@
                         name="files[]" 
                         class="hidden" 
                         multiple 
-                        onchange="this.form.submit()" 
+                        onchange="document.getElementById('ctx-upload-form').submit()" 
                     >
                 </label>
             </form>
 
             <div class="px-3 w-full">
                 <hr class="my-2">
-                <!-- New Folder (inline input) -->
+                {{-- New Folder (inline input) --}}
                 <form id="new-folder-form" class="flex gap-2 items-center">
                     @csrf
                     <input type="text" id="new-folder-name" placeholder="New folder name" class="flex-1 border border-gray-200 rounded px-2 py-1 text-sm" />
                     <button type="button" @click="createFolderFromMenu" class="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600">Buat</button>
                 </form>
+
+                {{-- Delete button (muncul bila ada selected item) --}}
+                <div class="mt-3">
+                    <button
+                        type="button"
+                        x-show="selectedType === 'file' || selectedType === 'folder'"
+                        @click="deleteSelected()"
+                        class="w-full bg-red-500 text-white px-3 py-2 rounded text-sm hover:bg-red-600 transition"
+                    >
+                        Hapus
+                    </button>
+
+                    <div x-show="!(selectedType === 'file' || selectedType === 'folder')" class="text-xs text-gray-400 mt-2">
+                        Klik kanan pada file atau folder untuk menghapus.
+                    </div>
+                </div>
             </div>
         </div>
     </template>
@@ -145,60 +188,74 @@
 function fileIndex() {
     return {
         showMenu: false,
-        animKey: 0,        // key to force re-render + replay animation
+        animKey: 0,
         menuX: 0,
         menuY: 0,
         dragActive: false,
 
+        selectedPath: null, // relative path (yang dikirim ke backend)
+        selectedName: null,
+        selectedType: null, // 'file' | 'folder' | null
+
         init() {
-            // nothing initial required now
+            // placeholder jika mau inisialisasi lebih lanjut
         },
 
         openMenu(e) {
-            // tampilkan menu di posisi pointer mouse (gunakan pageX/Y agar mengikuti scroll)
-            // posisi menu sedikit di atas pointer (seperti Google Drive)
-            const OFFSET_X = 8;     // sedikit ke kanan pointer
-            const OFFSET_Y = -30;   // sedikit ke atas pointer
+            // detect target item (file/folder)
+            const targetEl = e.target.closest('[data-path]');
+            if (targetEl) {
+                this.selectedPath = targetEl.getAttribute('data-path');
+                this.selectedName = targetEl.getAttribute('data-name');
+                this.selectedType = targetEl.getAttribute('data-type');
+            } else {
+                this.selectedPath = null;
+                this.selectedName = null;
+                this.selectedType = null;
+            }
+
+            // posisi menu sedikit di atas pointer
+            const OFFSET_X = 8;
+            const OFFSET_Y = -20;
 
             let x = e.pageX + OFFSET_X;
             let y = e.pageY + OFFSET_Y;
 
-            // ukuran viewport absolute (dengan scroll)
+            // koreksi agar tidak keluar viewport
             const maxX = window.scrollX + window.innerWidth;
             const maxY = window.scrollY + window.innerHeight;
-
-            const menuWidth = 224; // w-56 => 14rem => 224px
+            const menuWidth = 224; // w-56 => 224px
             const menuHeightEstimate = 240;
 
-            // koreksi agar tidak keluar layar
             if (x + menuWidth > maxX) {
                 x = Math.max(10, maxX - menuWidth - 10);
             }
             if (y + menuHeightEstimate > maxY) {
                 y = Math.max(10, maxY - menuHeightEstimate - 10);
             }
+            if (x < 10) x = 10;
+            if (y < 10) y = 10;
 
-            // jika menu belum tampil, tampilkan langsung
             if (!this.showMenu) {
                 this.menuX = x;
                 this.menuY = y;
                 this.animKey++;
-                // delay kecil supaya Alpine re-evaluates key
                 setTimeout(() => { this.showMenu = true; }, 6);
             } else {
-                // jika menu sudah tampil, restart animasi dan pindahkan posisi
-                // untuk restart animasi kita toggle showMenu dan bump animKey
+                // replay anim & pindah posisi
                 this.showMenu = false;
                 this.menuX = x;
                 this.menuY = y;
                 this.animKey++;
-                // beri sedikit delay supaya leave transition selesai, lalu enter ulang
-                setTimeout(() => { this.showMenu = true; }, 80); // 80ms memberi waktu anim keluar singkat
+                setTimeout(() => { this.showMenu = true; }, 80);
             }
         },
 
         closeMenu() {
             this.showMenu = false;
+            this.selectedPath = null;
+            this.selectedName = null;
+            this.selectedType = null;
         },
 
         handleDragOver(e) {
@@ -238,6 +295,29 @@ function fileIndex() {
             fd.append('currentFolder', '{{ $currentFolder ?? '' }}');
 
             fetch('{{ route('folder.create') }}', {
+                method: 'POST',
+                body: fd
+            }).then(() => {
+                window.location.reload();
+            }).catch(() => {
+                window.location.reload();
+            });
+        },
+
+        deleteSelected() {
+            if (!this.selectedPath) return;
+
+            if (!confirm('Hapus "' + this.selectedName + '"?')) return;
+
+            const deleteBase = "{{ url('/keepcloud/files/delete') }}";
+            const url = deleteBase + '/' + encodeURIComponent(this.selectedPath);
+
+            const fd = new FormData();
+            fd.append('_token', '{{ csrf_token() }}');
+            fd.append('_method', 'DELETE');
+            fd.append('currentFolder', '{{ $currentFolder ?? '' }}');
+
+            fetch(url, {
                 method: 'POST',
                 body: fd
             }).then(() => {

@@ -33,8 +33,10 @@ Route::get('/keepcloud/folder', [FileController::class, 'folder'])
     Route::get('/keepcloud/download/{filename}', [FileController::class, 'download'])->name('download');
     Route::get('/keepcloud/preview/{filename}', [FileController::class, 'preview'])->name('preview');
     Route::delete('/keepcloud/delete/{filename}', [FileController::class, 'delete'])->name('file.delete');
-    Route::delete('/keepcloud/files/delete/{filename}', [FileController::class, 'delete'])->name('file.delete');
-    
+    Route::delete('/keepcloud/files/delete/{filename}', [FileController::class, 'delete'])
+        ->where('filename', '.*')
+        ->name('file.delete');
+
     
     // Profile (default Breeze)
         Route::get('/keepcloud/profile', [ProfileController::class, 'edit'])->name('profile.edit');
