@@ -60,7 +60,7 @@
                     📁 <span class="font-medium">Penyimpanan saya</span>
                 </a>
 
-                <a href="#"
+                <a href="{{ route('files.sampah') }}"
                     class="flex items-start gap-3 bg-white rounded-full px-5 py-2 border-[3px] border-black hover:bg-gray-100 transition shadow-md">
                     🗑️ <span class="font-medium">Sampah</span>
                 </a>

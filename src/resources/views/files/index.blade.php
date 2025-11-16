@@ -97,13 +97,13 @@
                         <img src="{{ asset('images/' . $icon) }}" class="h-20 w-20 object-contain mb-2" alt="{{ $ext }}">
                         <p class="truncate w-full text-center text-sm h-5">{{ $filenameOnly }}</p>
                         <div class="mt-1 flex gap-1 flex-wrap justify-center">
-                            <a href="{{ route('download', ['filename' => $filenameOnly]) }}" class="bg-indigo-500 text-white px-2 py-1 rounded hover:bg-indigo-600 text-xs">Download</a>
+                            <a href="{{ url('/keepcloud/download/' . urlencode($relativeFilePath)) }}" class="bg-indigo-500 text-white px-2 py-1 rounded hover:bg-indigo-600 text-xs">Download</a>
                             @if(in_array($ext, ['jpg','jpeg','png','gif','pdf','mp4','mkv','mov','avi']))
-                                <a href="{{ route('preview', ['filename' => $filenameOnly]) }}" target="_blank" class="bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 text-xs">Preview</a>
+                                <a href="{{ url('/keepcloud/preview/' . urlencode($relativeFilePath)) }}" target="_blank" class="bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 text-xs">Preview</a>
                             @endif
 
                             {{-- Hidden delete form (keperluan fallback jika perlu) --}}
-                            <form action="{{ route('file.delete', ['filename' => $filenameOnly]) }}" method="POST" style="display:none;">
+                            <form action="{{ url('/keepcloud/files/delete/' . urlencode($relativeFilePath)) }}" method="POST" style="display:none;">
                                 @csrf
                                 @method('DELETE')
                                 <input type="hidden" name="currentFolder" value="{{ $currentFolder }}">
@@ -157,26 +157,36 @@
 
             <div class="px-3 w-full">
                 <hr class="my-2">
+
                 {{-- New Folder (inline input) --}}
-                <form id="new-folder-form" class="flex gap-2 items-center">
+                <form id="new-folder-form" class="flex gap-2 items-center mb-2">
                     @csrf
                     <input type="text" id="new-folder-name" placeholder="New folder name" class="flex-1 border border-gray-200 rounded px-2 py-1 text-sm" />
                     <button type="button" @click="createFolderFromMenu" class="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600">Buat</button>
                 </form>
 
-                {{-- Delete button (muncul bila ada selected item) --}}
-                <div class="mt-3">
+                {{-- Tombol untuk item yang dipilih (muncul hanya bila klik kanan pada file/folder) --}}
+                <div class="space-y-2">
+                    <button
+                        type="button"
+                        x-show="selectedType === 'file' || selectedType === 'folder'"
+                        @click="moveSelected()"
+                        class="w-full bg-red-500 text-white px-3 py-2 rounded text-sm hover:bg-yellow-600 transition"
+                    >
+                        Pindahkan ke Sampah
+                    </button>
+
                     <button
                         type="button"
                         x-show="selectedType === 'file' || selectedType === 'folder'"
                         @click="deleteSelected()"
                         class="w-full bg-red-500 text-white px-3 py-2 rounded text-sm hover:bg-red-600 transition"
                     >
-                        Hapus
+                        Hapus Permanen
                     </button>
 
                     <div x-show="!(selectedType === 'file' || selectedType === 'folder')" class="text-xs text-gray-400 mt-2">
-                        Klik kanan pada file atau folder untuk menghapus.
+                        Klik kanan pada file atau folder untuk melihat opsi.
                     </div>
                 </div>
             </div>
@@ -307,14 +317,38 @@ function fileIndex() {
         deleteSelected() {
             if (!this.selectedPath) return;
 
-            if (!confirm('Hapus "' + this.selectedName + '"?')) return;
+            if (!confirm('Hapus permanen "' + this.selectedName + '"?')) return;
 
+            // gunakan route files.delete (wildcard)
             const deleteBase = "{{ url('/keepcloud/files/delete') }}";
             const url = deleteBase + '/' + encodeURIComponent(this.selectedPath);
 
             const fd = new FormData();
             fd.append('_token', '{{ csrf_token() }}');
             fd.append('_method', 'DELETE');
+            fd.append('currentFolder', '{{ $currentFolder ?? '' }}');
+
+            fetch(url, {
+                method: 'POST',
+                body: fd
+            }).then(() => {
+                window.location.reload();
+            }).catch(() => {
+                window.location.reload();
+            });
+        },
+
+        moveSelected() {
+            if (!this.selectedPath) return;
+
+            if (!confirm('Pindahkan "' + this.selectedName + '" ke sampah?')) return;
+
+            const base = "{{ url('/keepcloud/move-to-trash') }}";
+            const url = base + '/' + encodeURIComponent(this.selectedPath);
+
+            const fd = new FormData();
+            fd.append('_token', '{{ csrf_token() }}');
+            fd.append('path', this.selectedPath);
             fd.append('currentFolder', '{{ $currentFolder ?? '' }}');
 
             fetch(url, {

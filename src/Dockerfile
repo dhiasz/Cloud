@@ -1,40 +1,22 @@
-# Dockerfile — Laravel + PHP 8.3 + Composer + Node 22.x
-# Menggunakan base image Laravel Sail dengan PHP 8.3 & Composer
-FROM laravelsail/php83-composer:latest
+FROM php:8.3-fpm
 
-# Non-interactive & install tools dasar (curl, ca-certificates, gnupg) lalu Node 22.x
-ENV DEBIAN_FRONTEND=noninteractive
+# Install system deps + node
+RUN apt-get update && apt-get install -y \
+    curl git unzip zip libzip-dev libonig-dev libxml2-dev \
+    && docker-php-ext-install pdo pdo_mysql zip mbstring xml \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl ca-certificates gnupg build-essential unzip git && \
-    # Setup NodeSource untuk Node 22.x (channel 22)
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
-    apt-get install -y --no-install-recommends nodejs && \
-    # bersihkan cache apt untuk mengurangi ukuran image
-    rm -rf /var/lib/apt/lists/*
+# Node
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+  && apt-get install -y nodejs
 
-# Set working directory
+# Composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
 WORKDIR /var/www/html
 
-# Copy konfigurasi PHP custom (pastikan file ada di ./docker/php.ini)
+# Copy PHP ini if exists (mounted also from host)
 COPY ./docker/php.ini /usr/local/etc/php/conf.d/uploads.ini
 
-# Copy seluruh source code Laravel (pastikan .dockerignore mengabaikan vendor/node_modules saat perlu)
-COPY . .
-
-# Install Composer dependencies (non-interactive)
-RUN composer install --no-interaction --prefer-dist --optimize-autoloader --no-scripts
-
-# Install node dependencies & build assets
-# Gunakan npm ci jika package-lock.json tersedia (lebih deterministik)
-RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi && npm run build
-
-# Optional: jalankan composer post-install scripts (jika diperlukan)
-RUN composer run-script post-root-package-install || true
-
-# Expose port aplikasi
 EXPOSE 8000
-
-# Jalankan artisan serve
-# Jalankan server Laravel
-CMD php artisan serve --host=0.0.0.0 --port=8000
+CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]
