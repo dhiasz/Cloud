@@ -42,8 +42,10 @@ Route::middleware(['auth'])->group(function () {
         ->name('files.moveToTrash');
 
     // View trash
-    Route::get('/keepcloud/sampah', [FileController::class, 'trashIndex'])
-        ->name('files.sampah');
+    Route::get('/keepcloud/sampah/{folder?}', [FileController::class, 'trashIndex'])
+        ->where('folder', '.*')
+        ->name('files.trash');
+
 
     // Restore file/folder from trash
     Route::post('/keepcloud/restore/{path?}', [FileController::class, 'restoreFromTrash'])

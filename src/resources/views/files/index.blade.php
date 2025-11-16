@@ -28,7 +28,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="w-20 h-20 text-blue-500 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0l4 4m-4-4l-4 4m13 8v4m0 0h-4m4 0h4m-7-4h3a4 4 0 000-8h-1" />
             </svg>
-            <p class="text-lg font-semibold text-blue-600">Drop files here to upload</p>
+            <p class="text-lg font-semibold text-blue-600">Drop files or folders here to upload</p>
         </div>
     </div>
 
@@ -171,7 +171,7 @@
                         type="button"
                         x-show="selectedType === 'file' || selectedType === 'folder'"
                         @click="moveSelected()"
-                        class="w-full bg-red-500 text-white px-3 py-2 rounded text-sm hover:bg-yellow-600 transition"
+                        class="w-full bg-yellow-500 text-white px-3 py-2 rounded text-sm hover:bg-yellow-600 transition"
                     >
                         Pindahkan ke Sampah
                     </button>
@@ -274,22 +274,111 @@ function fileIndex() {
         handleDragLeave(e) {
             this.dragActive = false;
         },
-        handleDrop(e) {
-            this.dragActive = false;
-            const currentFolder = '{{ $currentFolder ?? '' }}';
-            const files = e.dataTransfer.files;
-            if (files.length === 0) return;
+        async handleDrop(e) {
+        this.dragActive = false;
+        const currentFolder = '{{ $currentFolder ?? '' }}';
+        const dt = e.dataTransfer;
 
-            const formData = new FormData();
-            formData.append('_token', '{{ csrf_token() }}');
-            formData.append('currentFolder', currentFolder);
-            for (const f of files) formData.append('files[]', f);
+        const formData = new FormData();
+        formData.append('_token', '{{ csrf_token() }}');
+        formData.append('currentFolder', currentFolder);
 
-            fetch('{{ route('files.upload') }}', {
+        const dirs = [];           // folder markers like 'myFolder/sub/'
+        const filesArray = [];     // will collect File objects
+        const pathsArray = [];     // corresponding relative paths
+
+        const traverseFileTree = (entry, path = '') => {
+            return new Promise((resolve) => {
+                if (entry.isFile) {
+                    entry.file((file) => {
+                        const relativePath = path + file.name;
+                        filesArray.push(file);
+                        pathsArray.push(relativePath);
+                        resolve([relativePath]);
+                    }, (err) => {
+                        console.warn('file read error', err);
+                        resolve([]);
+                    });
+                } else if (entry.isDirectory) {
+                    const dirPath = path + entry.name + '/';
+                    dirs.push(dirPath);
+
+                    const dirReader = entry.createReader();
+                    const readEntries = () => {
+                        dirReader.readEntries(async (entries) => {
+                            if (!entries.length) {
+                                resolve([]);
+                                return;
+                            }
+                            const results = await Promise.all(entries.map(en => traverseFileTree(en, dirPath)));
+                            resolve(results.flat());
+                        }, () => {
+                            resolve([]);
+                        });
+                    };
+                    readEntries();
+                } else {
+                    resolve([]);
+                }
+            });
+        };
+
+        if (dt.items && dt.items.length) {
+            const items = Array.from(dt.items);
+            const tasks = [];
+            for (const it of items) {
+                const entry = (typeof it.webkitGetAsEntry === 'function') ? it.webkitGetAsEntry() : (typeof it.getAsEntry === 'function' ? it.getAsEntry() : null);
+                if (entry) {
+                    tasks.push(traverseFileTree(entry, ''));
+                } else {
+                    const file = it.getAsFile ? it.getAsFile() : null;
+                    if (file) {
+                        filesArray.push(file);
+                        pathsArray.push(file.name);
+                    }
+                }
+            }
+            await Promise.all(tasks);
+        } else {
+            // fallback: direct file list (no folder support)
+            const files = dt.files;
+            for (const f of files) {
+                filesArray.push(f);
+                pathsArray.push(f.name);
+            }
+        }
+
+        // append dirs unique
+        if (dirs.length) {
+            const uniqueDirs = Array.from(new Set(dirs.map(d => d.replace(/\\/g, '/').replace(/\.\.\//g, ''))));
+            formData.append('dirs', JSON.stringify(uniqueDirs));
+        }
+
+        // append files and their corresponding paths (pair by index)
+        for (let i = 0; i < filesArray.length; i++) {
+            formData.append('files[]', filesArray[i]);          // normal file upload
+            formData.append('paths[]', pathsArray[i]);          // relative path for that file
+        }
+
+        // if nothing, abort
+        if (!formData.has('files[]') && !formData.has('dirs')) {
+            console.warn('No files or folders to upload');
+            return;
+        }
+
+        try {
+            await fetch('{{ route('files.upload') }}', {
                 method: 'POST',
                 body: formData
-            }).then(() => window.location.reload());
-        },
+            });
+            window.location.reload();
+        } catch (err) {
+            console.error('Upload failed', err);
+            window.location.reload();
+        }
+    },
+
+
 
         createFolderFromMenu() {
             const nameInput = document.getElementById('new-folder-name');

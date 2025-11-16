@@ -80,52 +80,93 @@ class FileController extends Controller
     }
 
     // Upload file ke folder aktif
-  public function upload(Request $request)
-{
-    // Terima baik 'file' (single) atau 'files' (multiple)
-    // Validasi manual supaya fleksibel
-    $filesToProcess = [];
+    public function upload(Request $request)
+    {
+        // Validasi dasar tetap seperti sebelumnya...
+        $disk = Storage::disk('minio');
 
-    if ($request->hasFile('files')) {
-        $filesToProcess = $request->file('files');
-    } elseif ($request->hasFile('file')) {
-        // fallback single file input dari layout
-        $filesToProcess = [$request->file('file')];
-    }
+        // Ambil dirs (folder markers) jika ada
+        $dirsJson = $request->input('dirs', '[]');
+        $dirs = json_decode($dirsJson, true);
+        if (!is_array($dirs)) $dirs = [];
 
-    if (empty($filesToProcess)) {
-        return back()->with('error', 'Tidak ada file yang diunggah.');
-    }
-
-    // Validasi ukuran setiap file (opsional, ubah sesuai kebutuhan)
-    foreach ($filesToProcess as $f) {
-        if (!$f->isValid()) {
-            return back()->with('error', 'Salah satu file tidak valid.');
+        $currentFolder = $request->input('currentFolder');
+        $baseUserPath = 'users/' . auth()->id();
+        if ($currentFolder && trim($currentFolder) !== '') {
+            $currentFolder = trim($currentFolder, '/');
+            $baseUserPathWithCurrent = $baseUserPath . '/' . $currentFolder;
+        } else {
+            $baseUserPathWithCurrent = $baseUserPath;
         }
-        // contoh validasi ukuran: 5GB => 5120000 KB pada konfigurasi awalmu
-        // tapi disarankan ubah ke bytes jika mau presisi
+
+        // 1) Buat folder markers dulu (jika ada)
+        foreach ($dirs as $dir) {
+            $dir = str_replace('\\', '/', $dir);
+            $dir = preg_replace('#\.\./#', '', $dir);
+            $dir = trim($dir, '/'); // tanpa trailing slash
+
+            if ($dir === '') continue;
+
+            $targetDir = $baseUserPathWithCurrent . '/' . $dir;
+            try {
+                $disk->makeDirectory($targetDir);
+            } catch (\Throwable $e) {
+                // fallback: buat marker object dengan trailing slash
+                try {
+                    $markerPath = rtrim($targetDir, '/') . '/';
+                    $disk->put($markerPath, '');
+                } catch (\Throwable $e2) {
+                    \Log::warning("Failed create dir marker [$targetDir]: " . $e2->getMessage());
+                }
+            }
+        }
+
+        // 2) Ambil files[] dan paths[] dari request
+        $uploadedFiles = $request->file('files', []); // array of UploadedFile
+        $paths = $request->input('paths', []);         // array of relative paths matching order
+
+        // Jika tidak ada files tapi ada file input name 'file' (single), fallback
+        if (empty($uploadedFiles) && $request->hasFile('file')) {
+            $uploadedFiles = [$request->file('file')];
+            $paths = [$request->file('file')->getClientOriginalName()];
+        }
+
+        // Pastikan jumlahnya sama; jika tidak sama, tutup dengan error atau pad dengan nama file sederhana
+        // Kita akan pair berdasarkan index
+        $countFiles = count($uploadedFiles);
+        for ($i = 0; $i < $countFiles; $i++) {
+            $file = $uploadedFiles[$i];
+            $relPath = isset($paths[$i]) ? $paths[$i] : $file->getClientOriginalName();
+
+            // sanitize path
+            $relPath = str_replace('\\', '/', $relPath);
+            $relPath = preg_replace('#\.\./#', '', $relPath);
+            $relPath = ltrim($relPath, '/');
+
+            // jika currentFolder ada, prefix
+            $finalRelative = ($currentFolder && trim($currentFolder) !== '') ? ($currentFolder . '/' . $relPath) : $relPath;
+
+            $putPath = $baseUserPath . '/' . $finalRelative;
+
+            // buat direktori marker jika perlu (opsional)
+            $dirOfFile = trim(dirname($putPath), '/');
+            // makeDirectory untuk memastikan prefix ada (adapter s3 biasanya tidak perlu, tapi aman)
+            try {
+                $disk->makeDirectory($dirOfFile);
+            } catch (\Throwable $e) {
+                // ignore
+            }
+
+            // simpan file (stream)
+            $stream = fopen($file->getRealPath(), 'r');
+            $disk->put($putPath, $stream);
+            if (is_resource($stream)) fclose($stream);
+        }
+
+        return back()->with('success', 'Files & folders berhasil diunggah!');
     }
 
-    $currentFolder = $request->input('currentFolder');
-    $disk = Storage::disk('minio');
-    $basePath = 'users/' . auth()->id();
 
-    if ($currentFolder && trim($currentFolder) !== '') {
-        // pastikan tidak ada leading/trailing slash
-        $currentFolder = trim($currentFolder, '/');
-        $basePath .= '/' . $currentFolder;
-    }
-
-    foreach ($filesToProcess as $file) {
-        $filename = $file->getClientOriginalName();
-        $path = $basePath . '/' . $filename;
-        $stream = fopen($file->getRealPath(), 'r');
-        $disk->put($path, $stream);
-        if (is_resource($stream)) fclose($stream);
-    }
-
-    return back()->with('success', 'Files berhasil diunggah!');
-}
 
 
 
@@ -441,44 +482,64 @@ class FileController extends Controller
 /**
  * Show user's trash contents
  */
-public function trashIndex()
+/**
+ * Show user's trash contents (browseable)
+ * Accepts optional folder path inside .trash
+ */
+public function trashIndex($folder = null)
 {
     $disk = Storage::disk('minio');
     $userPrefix = 'users/' . Auth::id();
-    $trashBase = trim($userPrefix . '/.trash', '/');
+    $trashBase = trim($userPrefix . '/.trash', '/'); // users/{id}/.trash
 
-    // Ambil semua file di bawah trashBase
-    $files = [];
+    // jika ada folder yang diminta, masuk ke dalamnya
+    $folder = $folder ? trim($folder, '/') : null;
+    $listPrefix = $trashBase . ($folder ? '/' . $folder : '');
+
+    // normalize: jika prefix kosong, pakai trashBase
+    $listPrefix = trim($listPrefix, '/');
+
+    // catch exceptions saat listing
     try {
-        $files = $disk->allFiles($trashBase);
+        // ambil files & folders di level prefix (tidak recursive untuk directories)
+        $filesRaw = $disk->files($listPrefix) ?: [];
+        $foldersRaw = $disk->directories($listPrefix) ?: [];
     } catch (\Throwable $e) {
-        // fallback: try files()
-        $files = $disk->files($trashBase) ?? [];
+        // fallback ke allFiles jika provider behave differently
+        try {
+            $filesRaw = $disk->allFiles($listPrefix) ?: [];
+            $foldersRaw = $disk->directories($listPrefix) ?: [];
+        } catch (\Throwable $e2) {
+            $filesRaw = [];
+            $foldersRaw = [];
+            \Log::warning("trashIndex listing failed for [$listPrefix]: " . $e2->getMessage());
+        }
     }
 
-    // Ambil juga directories (opsional)
-    $folders = [];
-    try {
-        $folders = $disk->directories($trashBase) ?? [];
-    } catch (\Throwable $e) {
-        $folders = [];
-    }
+    // convert full paths to relative paths inside .trash (mis. folder1/file.png)
+    $stripPrefix = $trashBase . '/';
+    $relFiles = array_map(function($p) use ($stripPrefix) {
+        return ltrim(Str::startsWith($p, $stripPrefix) ? substr($p, strlen($stripPrefix)) : $p, '/');
+    }, $filesRaw);
 
-    // Buat relative paths untuk view (tanpa prefix users/{id}/.trash/)
-    $relFiles = array_map(function($p) use ($userPrefix) {
-        return ltrim(substr($p, strlen($userPrefix . '/.trash')), '/');
-    }, $files);
+    $relFolders = array_map(function($p) use ($stripPrefix) {
+        return ltrim(Str::startsWith($p, $stripPrefix) ? substr($p, strlen($stripPrefix)) : $p, '/');
+    }, $foldersRaw);
 
-    $relFolders = array_map(function($p) use ($userPrefix) {
-        return ltrim(substr($p, strlen($userPrefix . '/.trash')), '/');
-    }, $folders);
+    // Sort optionally
+    sort($relFolders);
+    sort($relFiles);
+
+    // currentFolder untuk breadcrumb (null untuk root .trash)
+    $currentFolder = $folder;
 
     return view('files.sampah', [
         'files' => $relFiles,
         'folders' => $relFolders,
-        'currentFolder' => null
+        'currentFolder' => $currentFolder
     ]);
 }
+
 
 /**
  * Restore file/folder from trash back to user root (move)
