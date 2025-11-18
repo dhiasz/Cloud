@@ -28,7 +28,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="w-20 h-20 text-blue-500 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0l4 4m-4-4l-4 4m13 8v4m0 0h-4m4 0h4m-7-4h3a4 4 0 000-8h-1" />
             </svg>
-            <p class="text-lg font-semibold text-blue-600">Drop files here to upload</p>
+            <p class="text-lg font-semibold text-blue-600">Drop files or folders here to upload</p>
         </div>
     </div>
 
@@ -97,13 +97,13 @@
                         <img src="{{ asset('images/' . $icon) }}" class="h-20 w-20 object-contain mb-2" alt="{{ $ext }}">
                         <p class="truncate w-full text-center text-sm h-5">{{ $filenameOnly }}</p>
                         <div class="mt-1 flex gap-1 flex-wrap justify-center">
-                            <a href="{{ route('download', ['filename' => $filenameOnly]) }}" class="bg-indigo-500 text-white px-2 py-1 rounded hover:bg-indigo-600 text-xs">Download</a>
+                            <a href="{{ url('/keepcloud/download/' . urlencode($relativeFilePath)) }}" class="bg-indigo-500 text-white px-2 py-1 rounded hover:bg-indigo-600 text-xs">Download</a>
                             @if(in_array($ext, ['jpg','jpeg','png','gif','pdf','mp4','mkv','mov','avi']))
-                                <a href="{{ route('preview', ['filename' => $filenameOnly]) }}" target="_blank" class="bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 text-xs">Preview</a>
+                                <a href="{{ url('/keepcloud/preview/' . urlencode($relativeFilePath)) }}" target="_blank" class="bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 text-xs">Preview</a>
                             @endif
 
                             {{-- Hidden delete form (keperluan fallback jika perlu) --}}
-                            <form action="{{ route('file.delete', ['filename' => $filenameOnly]) }}" method="POST" style="display:none;">
+                            <form action="{{ url('/keepcloud/files/delete/' . urlencode($relativeFilePath)) }}" method="POST" style="display:none;">
                                 @csrf
                                 @method('DELETE')
                                 <input type="hidden" name="currentFolder" value="{{ $currentFolder }}">
@@ -117,7 +117,7 @@
     </div>
 
     {{-- Context Menu (muncul tepat di pointer; replay anim saat klik kanan ulang) --}}
-    <template x-if="true">
+ <template x-if="true">
         <div
             x-show="showMenu"
             :key="animKey"
@@ -157,26 +157,47 @@
 
             <div class="px-3 w-full">
                 <hr class="my-2">
+
                 {{-- New Folder (inline input) --}}
-                <form id="new-folder-form" class="flex gap-2 items-center">
+                <form id="new-folder-form" class="flex gap-2 items-center mb-2">
                     @csrf
                     <input type="text" id="new-folder-name" placeholder="New folder name" class="flex-1 border border-gray-200 rounded px-2 py-1 text-sm" />
                     <button type="button" @click="createFolderFromMenu" class="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600">Buat</button>
                 </form>
 
-                {{-- Delete button (muncul bila ada selected item) --}}
-                <div class="mt-3">
+                {{-- Tombol untuk item yang dipilih (muncul hanya bila klik kanan pada file/folder) --}}
+                <div class="space-y-2">
+                    <!-- Preview (only for files with previewable ext) -->
+                    <button
+                        type="button"
+                        x-show="selectedType === 'file' && isPreviewable(selectedName)"
+                        @click="previewSelected()"
+                        class="w-full bg-gray-600 text-white px-3 py-2 rounded text-sm hover:bg-gray-700 transition"
+                    >
+                        Preview
+                    </button>
+
+                    <!-- Download (only for files) -->
+                    <button
+                        type="button"
+                        x-show="selectedType === 'file'"
+                        @click="downloadSelected()"
+                        class="w-full bg-indigo-500 text-white px-3 py-2 rounded text-sm hover:bg-indigo-600 transition"
+                    >
+                        Download
+                    </button>
+
                     <button
                         type="button"
                         x-show="selectedType === 'file' || selectedType === 'folder'"
-                        @click="deleteSelected()"
-                        class="w-full bg-red-500 text-white px-3 py-2 rounded text-sm hover:bg-red-600 transition"
+                        @click="moveSelected()"
+                        class="w-full bg-yellow-500 text-white px-3 py-2 rounded text-sm hover:bg-yellow-600 transition"
                     >
-                        Hapus
+                        Pindahkan ke Sampah
                     </button>
 
                     <div x-show="!(selectedType === 'file' || selectedType === 'folder')" class="text-xs text-gray-400 mt-2">
-                        Klik kanan pada file atau folder untuk menghapus.
+                        Klik kanan pada file atau folder untuk melihat opsi.
                     </div>
                 </div>
             </div>
@@ -199,6 +220,12 @@ function fileIndex() {
 
         init() {
             // placeholder jika mau inisialisasi lebih lanjut
+        },
+
+        isPreviewable(name) {
+            if (!name) return false;
+            const ext = name.split('.').pop().toLowerCase();
+            return ['jpg','jpeg','png','gif','pdf','mp4','mkv','mov','avi'].includes(ext);
         },
 
         openMenu(e) {
@@ -264,21 +291,108 @@ function fileIndex() {
         handleDragLeave(e) {
             this.dragActive = false;
         },
-        handleDrop(e) {
+        async handleDrop(e) {
             this.dragActive = false;
             const currentFolder = '{{ $currentFolder ?? '' }}';
-            const files = e.dataTransfer.files;
-            if (files.length === 0) return;
+            const dt = e.dataTransfer;
 
             const formData = new FormData();
             formData.append('_token', '{{ csrf_token() }}');
             formData.append('currentFolder', currentFolder);
-            for (const f of files) formData.append('files[]', f);
 
-            fetch('{{ route('files.upload') }}', {
-                method: 'POST',
-                body: formData
-            }).then(() => window.location.reload());
+            const dirs = [];           // folder markers like 'myFolder/sub/'
+            const filesArray = [];     // will collect File objects
+            const pathsArray = [];     // corresponding relative paths
+
+            const traverseFileTree = (entry, path = '') => {
+                return new Promise((resolve) => {
+                    if (entry.isFile) {
+                        entry.file((file) => {
+                            const relativePath = path + file.name;
+                            filesArray.push(file);
+                            pathsArray.push(relativePath);
+                            resolve([relativePath]);
+                        }, (err) => {
+                            console.warn('file read error', err);
+                            resolve([]);
+                        });
+                    } else if (entry.isDirectory) {
+                        const dirPath = path + entry.name + '/';
+                        dirs.push(dirPath);
+
+                        const dirReader = entry.createReader();
+                        const readEntries = () => {
+                            dirReader.readEntries(async (entries) => {
+                                if (!entries.length) {
+                                    resolve([]);
+                                    return;
+                                }
+                                const results = await Promise.all(entries.map(en => traverseFileTree(en, dirPath)));
+                                resolve(results.flat());
+                            }, () => {
+                                resolve([]);
+                            });
+                        };
+                        readEntries();
+                    } else {
+                        resolve([]);
+                    }
+                });
+            };
+
+            if (dt.items && dt.items.length) {
+                const items = Array.from(dt.items);
+                const tasks = [];
+                for (const it of items) {
+                    const entry = (typeof it.webkitGetAsEntry === 'function') ? it.webkitGetAsEntry() : (typeof it.getAsEntry === 'function' ? it.getAsEntry() : null);
+                    if (entry) {
+                        tasks.push(traverseFileTree(entry, ''));
+                    } else {
+                        const file = it.getAsFile ? it.getAsFile() : null;
+                        if (file) {
+                            filesArray.push(file);
+                            pathsArray.push(file.name);
+                        }
+                    }
+                }
+                await Promise.all(tasks);
+            } else {
+                // fallback: direct file list (no folder support)
+                const files = dt.files;
+                for (const f of files) {
+                    filesArray.push(f);
+                    pathsArray.push(f.name);
+                }
+            }
+
+            // append dirs unique
+            if (dirs.length) {
+                const uniqueDirs = Array.from(new Set(dirs.map(d => d.replace(/\\/g, '/').replace(/\.\.\//g, ''))));
+                formData.append('dirs', JSON.stringify(uniqueDirs));
+            }
+
+            // append files and their corresponding paths (pair by index)
+            for (let i = 0; i < filesArray.length; i++) {
+                formData.append('files[]', filesArray[i]);          // normal file upload
+                formData.append('paths[]', pathsArray[i]);          // relative path for that file
+            }
+
+            // if nothing, abort
+            if (!formData.has('files[]') && !formData.has('dirs')) {
+                console.warn('No files or folders to upload');
+                return;
+            }
+
+            try {
+                await fetch('{{ route('files.upload') }}', {
+                    method: 'POST',
+                    body: formData
+                });
+                window.location.reload();
+            } catch (err) {
+                console.error('Upload failed', err);
+                window.location.reload();
+            }
         },
 
         createFolderFromMenu() {
@@ -307,8 +421,9 @@ function fileIndex() {
         deleteSelected() {
             if (!this.selectedPath) return;
 
-            if (!confirm('Hapus "' + this.selectedName + '"?')) return;
+            if (!confirm('Hapus permanen "' + this.selectedName + '"?')) return;
 
+            // gunakan route files.delete (wildcard)
             const deleteBase = "{{ url('/keepcloud/files/delete') }}";
             const url = deleteBase + '/' + encodeURIComponent(this.selectedPath);
 
@@ -325,6 +440,46 @@ function fileIndex() {
             }).catch(() => {
                 window.location.reload();
             });
+        },
+
+        moveSelected() {
+            if (!this.selectedPath) return;
+
+            if (!confirm('Pindahkan "' + this.selectedName + '" ke sampah?')) return;
+
+            const base = "{{ url('/keepcloud/move-to-trash') }}";
+            const url = base + '/' + encodeURIComponent(this.selectedPath);
+
+            const fd = new FormData();
+            fd.append('_token', '{{ csrf_token() }}');
+            fd.append('path', this.selectedPath);
+            fd.append('currentFolder', '{{ $currentFolder ?? '' }}');
+
+            fetch(url, {
+                method: 'POST',
+                body: fd
+            }).then(() => {
+                window.location.reload();
+            }).catch(() => {
+                window.location.reload();
+            });
+        },
+
+        // === NEW: preview and download handlers ===
+        previewSelected() {
+            if (!this.selectedPath) return;
+            const previewUrl = "{{ url('/keepcloud/preview') }}/" + encodeURIComponent(this.selectedPath);
+            // open preview in new tab
+            window.open(previewUrl, '_blank', 'noopener');
+            this.closeMenu();
+        },
+
+        downloadSelected() {
+            if (!this.selectedPath) return;
+            const downloadUrl = "{{ url('/keepcloud/download') }}/" + encodeURIComponent(this.selectedPath);
+            // trigger download (navigate to url will prompt download if controller sets headers)
+            window.location.href = downloadUrl;
+            this.closeMenu();
         }
     };
 }

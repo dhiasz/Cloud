@@ -16,17 +16,30 @@ class FileController extends Controller
     public function folder($folder = null)
     {
         $userFolder = 'users/' . Auth::id();
-
-        // Jika ada folder, masuk ke dalamnya
         if ($folder) {
             $userFolder .= '/' . $folder;
         }
 
-        // Ambil semua file dan folder di path saat ini
-        $files = Storage::disk('minio')->files($userFolder);
-        $folders = Storage::disk('minio')->directories($userFolder);
+        // ambil semua (raw)
+        $rawFiles = Storage::disk('minio')->files($userFolder);
+        $rawFolders = Storage::disk('minio')->directories($userFolder);
 
-        // Ambil nama folder saat ini untuk navigasi
+        $trashPrefix = trim('users/' . Auth::id() . '/.trash', '/');
+
+
+        $filterOutTrash = function($path) use ($trashPrefix) {
+
+            $p = rtrim($path, '/');
+
+            if (Str::contains($p, $trashPrefix . '/')) return false;
+            if (Str::startsWith($p, $trashPrefix)) return false;
+            return true;
+        };
+
+
+        $files = array_values(array_filter($rawFiles, $filterOutTrash));
+        $folders = array_values(array_filter($rawFolders, $filterOutTrash));
+
         $currentFolder = $folder;
 
         return view('files.folder', compact('files', 'folders', 'currentFolder'));
@@ -37,69 +50,123 @@ class FileController extends Controller
     public function index($folder = null)
     {
         $userFolder = 'users/' . Auth::id();
-
-        // Jika ada folder, masuk ke dalamnya
         if ($folder) {
             $userFolder .= '/' . $folder;
         }
 
-        // Ambil semua file dan folder di path saat ini
-        $files = Storage::disk('minio')->files($userFolder);
-        $folders = Storage::disk('minio')->directories($userFolder);
+        // ambil semua (raw)
+        $rawFiles = Storage::disk('minio')->files($userFolder);
+        $rawFolders = Storage::disk('minio')->directories($userFolder);
 
-        // Ambil nama folder saat ini untuk navigasi
+        $trashPrefix = trim('users/' . Auth::id() . '/.trash', '/');
+
+
+        $filterOutTrash = function($path) use ($trashPrefix) {
+
+            $p = rtrim($path, '/');
+
+            if (Str::contains($p, $trashPrefix . '/')) return false;
+            if (Str::startsWith($p, $trashPrefix)) return false;
+            return true;
+        };
+
+
+        $files = array_values(array_filter($rawFiles, $filterOutTrash));
+        $folders = array_values(array_filter($rawFolders, $filterOutTrash));
+
         $currentFolder = $folder;
 
         return view('files.index', compact('files', 'folders', 'currentFolder'));
     }
 
     // Upload file ke folder aktif
-  public function upload(Request $request)
-{
-    // Terima baik 'file' (single) atau 'files' (multiple)
-    // Validasi manual supaya fleksibel
-    $filesToProcess = [];
+    public function upload(Request $request)
+    {
+        // Validasi dasar tetap seperti sebelumnya...
+        $disk = Storage::disk('minio');
 
-    if ($request->hasFile('files')) {
-        $filesToProcess = $request->file('files');
-    } elseif ($request->hasFile('file')) {
-        // fallback single file input dari layout
-        $filesToProcess = [$request->file('file')];
-    }
+        // Ambil dirs (folder markers) jika ada
+        $dirsJson = $request->input('dirs', '[]');
+        $dirs = json_decode($dirsJson, true);
+        if (!is_array($dirs)) $dirs = [];
 
-    if (empty($filesToProcess)) {
-        return back()->with('error', 'Tidak ada file yang diunggah.');
-    }
-
-    // Validasi ukuran setiap file (opsional, ubah sesuai kebutuhan)
-    foreach ($filesToProcess as $f) {
-        if (!$f->isValid()) {
-            return back()->with('error', 'Salah satu file tidak valid.');
+        $currentFolder = $request->input('currentFolder');
+        $baseUserPath = 'users/' . auth()->id();
+        if ($currentFolder && trim($currentFolder) !== '') {
+            $currentFolder = trim($currentFolder, '/');
+            $baseUserPathWithCurrent = $baseUserPath . '/' . $currentFolder;
+        } else {
+            $baseUserPathWithCurrent = $baseUserPath;
         }
-        // contoh validasi ukuran: 5GB => 5120000 KB pada konfigurasi awalmu
-        // tapi disarankan ubah ke bytes jika mau presisi
+
+        // 1) Buat folder markers dulu (jika ada)
+        foreach ($dirs as $dir) {
+            $dir = str_replace('\\', '/', $dir);
+            $dir = preg_replace('#\.\./#', '', $dir);
+            $dir = trim($dir, '/'); // tanpa trailing slash
+
+            if ($dir === '') continue;
+
+            $targetDir = $baseUserPathWithCurrent . '/' . $dir;
+            try {
+                $disk->makeDirectory($targetDir);
+            } catch (\Throwable $e) {
+                // fallback: buat marker object dengan trailing slash
+                try {
+                    $markerPath = rtrim($targetDir, '/') . '/';
+                    $disk->put($markerPath, '');
+                } catch (\Throwable $e2) {
+                    \Log::warning("Failed create dir marker [$targetDir]: " . $e2->getMessage());
+                }
+            }
+        }
+
+        // 2) Ambil files[] dan paths[] dari request
+        $uploadedFiles = $request->file('files', []); // array of UploadedFile
+        $paths = $request->input('paths', []);         // array of relative paths matching order
+
+        // Jika tidak ada files tapi ada file input name 'file' (single), fallback
+        if (empty($uploadedFiles) && $request->hasFile('file')) {
+            $uploadedFiles = [$request->file('file')];
+            $paths = [$request->file('file')->getClientOriginalName()];
+        }
+
+        // Pastikan jumlahnya sama; jika tidak sama, tutup dengan error atau pad dengan nama file sederhana
+        // Kita akan pair berdasarkan index
+        $countFiles = count($uploadedFiles);
+        for ($i = 0; $i < $countFiles; $i++) {
+            $file = $uploadedFiles[$i];
+            $relPath = isset($paths[$i]) ? $paths[$i] : $file->getClientOriginalName();
+
+            // sanitize path
+            $relPath = str_replace('\\', '/', $relPath);
+            $relPath = preg_replace('#\.\./#', '', $relPath);
+            $relPath = ltrim($relPath, '/');
+
+            // jika currentFolder ada, prefix
+            $finalRelative = ($currentFolder && trim($currentFolder) !== '') ? ($currentFolder . '/' . $relPath) : $relPath;
+
+            $putPath = $baseUserPath . '/' . $finalRelative;
+
+            // buat direktori marker jika perlu (opsional)
+            $dirOfFile = trim(dirname($putPath), '/');
+            // makeDirectory untuk memastikan prefix ada (adapter s3 biasanya tidak perlu, tapi aman)
+            try {
+                $disk->makeDirectory($dirOfFile);
+            } catch (\Throwable $e) {
+                // ignore
+            }
+
+            // simpan file (stream)
+            $stream = fopen($file->getRealPath(), 'r');
+            $disk->put($putPath, $stream);
+            if (is_resource($stream)) fclose($stream);
+        }
+
+        return back()->with('success', 'Files & folders berhasil diunggah!');
     }
 
-    $currentFolder = $request->input('currentFolder');
-    $disk = Storage::disk('minio');
-    $basePath = 'users/' . auth()->id();
 
-    if ($currentFolder && trim($currentFolder) !== '') {
-        // pastikan tidak ada leading/trailing slash
-        $currentFolder = trim($currentFolder, '/');
-        $basePath .= '/' . $currentFolder;
-    }
-
-    foreach ($filesToProcess as $file) {
-        $filename = $file->getClientOriginalName();
-        $path = $basePath . '/' . $filename;
-        $stream = fopen($file->getRealPath(), 'r');
-        $disk->put($path, $stream);
-        if (is_resource($stream)) fclose($stream);
-    }
-
-    return back()->with('success', 'Files berhasil diunggah!');
-}
 
 
 
@@ -139,12 +206,13 @@ class FileController extends Controller
     }
 
     // Hapus file & folder
-    public function delete(Request $request, $filename)
+        public function delete(Request $request, $filename)
     {
         $filename = urldecode($filename);
         $disk = Storage::disk('minio');
         $userFolder = 'users/' . Auth::id();
 
+        // normalisasi input: hapus leading users/{id}/ jika ada
         $filename = trim($filename, '/');
         $prefixToStrip = 'users/' . Auth::id() . '/';
         if (Str::startsWith($filename, $prefixToStrip)) {
@@ -154,53 +222,63 @@ class FileController extends Controller
 
         $currentFolder = $request->input('currentFolder');
         $relative = $filename;
+
+        // jika yang dikirim adalah basename dan ada currentFolder => buat path relatif
         if (!Str::contains($relative, '/') && $currentFolder && trim($currentFolder) !== '') {
             $relative = trim($currentFolder, '/') . '/' . $relative;
         }
         $relative = trim($relative, '/');
 
-        $fullPath = $userFolder . ($relative !== '' ? '/' . $relative : '');
-        $fullPath = trim($fullPath, '/');
+        // fullPath tanpa trailing slash
+        $fullPath = trim($userFolder . ($relative !== '' ? '/' . $relative : ''), '/');
 
-        \Log::info("Delete requested (aggressive). fullPath={$fullPath}, relative={$relative}, currentFolder={$currentFolder}");
+        \Log::info("Delete requested. fullPath={$fullPath}, relative={$relative}, currentFolder={$currentFolder}");
 
-        // Kumpulkan kemungkinan objek (prefix variants)
-        $variants = [
-            $fullPath,
-            $fullPath . '/',
-        ];
+        // prefix dengan trailing slash untuk listing semua objects di bawahnya
+        $prefixWithSlash = $fullPath === '' ? '' : $fullPath . '/';
 
         $objectsToDelete = [];
-        foreach ($variants as $v) {
-            try {
-                $found = $disk->allFiles($v);
+
+        // 1) Cari semua objek di bawah prefixWithSlash (recommended)
+        try {
+            if ($prefixWithSlash !== '') {
+                $found = $disk->allFiles($prefixWithSlash);
                 if (!empty($found)) {
                     $objectsToDelete = array_merge($objectsToDelete, $found);
                 }
-                // juga cek files() untuk memastikan
-                $foundFiles = $disk->files($v);
+                // juga periksa files() untuk beberapa adapter
+                $foundFiles = $disk->files($prefixWithSlash);
                 if (!empty($foundFiles)) {
                     $objectsToDelete = array_merge($objectsToDelete, $foundFiles);
                 }
-            } catch (\Throwable $e) {
-                \Log::warning("Listing failed for [$v]: " . $e->getMessage());
             }
+
+            // 2) Jika tidak ada hasil, coba listing tanpa slash (beberapa adapter menyimpan tanpa)
+            if (empty($objectsToDelete)) {
+                $found2 = $disk->allFiles($fullPath);
+                if (!empty($found2)) {
+                    $objectsToDelete = array_merge($objectsToDelete, $found2);
+                }
+                $foundFiles2 = $disk->files($fullPath);
+                if (!empty($foundFiles2)) {
+                    $objectsToDelete = array_merge($objectsToDelete, $foundFiles2);
+                }
+            }
+        } catch (\Throwable $e) {
+            \Log::warning("Listing failed for [$fullPath] or [$prefixWithSlash]: " . $e->getMessage());
         }
 
-        // Normalisasi unik
+        // normalisasi unik
         $objectsToDelete = array_values(array_unique($objectsToDelete));
 
         $deleted = [];
         $failed = [];
 
-        // Jika ada objek, hapus satu-per-satu dan verifikasi
         if (!empty($objectsToDelete)) {
             foreach ($objectsToDelete as $obj) {
                 try {
-                    $res = $disk->delete($obj);
-                    // beberapa adapter mengembalikan true/false, beberapa tidak => periksa exists()
+                    $disk->delete($obj);
                     if ($disk->exists($obj)) {
-                        // masih ada setelah delete -> catat gagal
                         $failed[] = $obj;
                         \Log::warning("After delete(), object still exists: $obj");
                     } else {
@@ -213,16 +291,21 @@ class FileController extends Controller
                 }
             }
 
-            // Coba deleteDirectory untuk bersihkan prefix jika tersedia
-            if (method_exists($disk, 'deleteDirectory')) {
+            // Coba hapus directory marker (beberapa adapter punya marker dengan trailing slash)
+            if ($prefixWithSlash !== '') {
                 try {
-                    $disk->deleteDirectory($fullPath);
+                    if ($disk->exists($prefixWithSlash)) {
+                        $disk->delete($prefixWithSlash);
+                    }
+                    // dan coba deleteDirectory sebagai cleanup
+                    if (method_exists($disk, 'deleteDirectory')) {
+                        $disk->deleteDirectory($fullPath);
+                    }
                 } catch (\Throwable $e) {
-                    \Log::info("deleteDirectory post-cleanup failed for [$fullPath]: " . $e->getMessage());
+                    \Log::info("Post-cleanup deleteDirectory/marker failed for [$fullPath]: " . $e->getMessage());
                 }
             }
 
-            // Build pesan hasil
             $msg = '';
             if (!empty($deleted)) {
                 $msg .= 'Berhasil menghapus ' . count($deleted) . ' objek. ';
@@ -232,7 +315,6 @@ class FileController extends Controller
             }
 
             if (!empty($failed)) {
-                // simpan daftar gagal ke log agar bisa Anda telusuri
                 \Log::error('Objects failed to delete: ' . implode(', ', $failed));
                 return back()->with('error', $msg . 'Lihat laravel.log untuk rincian.');
             }
@@ -240,35 +322,31 @@ class FileController extends Controller
             return back()->with('success', $msg);
         }
 
-        // Jika tidak ditemukan objek, coba hapus file tunggal / marker
+        // Tidak ada objek di bawah prefix => coba hapus file tunggal (bisa jadi marker tanpa slash)
         try {
             if ($disk->exists($fullPath)) {
-                try {
-                    $disk->delete($fullPath);
-                    return back()->with('success', 'File berhasil dihapus!');
-                } catch (\Throwable $e) {
-                    \Log::error("Single-file delete failed for [$fullPath]: " . $e->getMessage());
-                    return back()->with('error', 'Gagal menghapus file: ' . $e->getMessage());
-                }
+                $disk->delete($fullPath);
+                return back()->with('success', 'File berhasil dihapus!');
             }
 
-            // cek marker
-            $dirMarker = $fullPath . '/';
-            if ($disk->exists($dirMarker)) {
-                try {
-                    $disk->delete($dirMarker);
-                    return back()->with('success', 'Folder (marker) berhasil dihapus!');
-                } catch (\Throwable $e) {
-                    \Log::error("Dir marker delete failed for [$dirMarker]: " . $e->getMessage());
+            // coba trailing slash marker
+            if ($prefixWithSlash !== '' && $disk->exists($prefixWithSlash)) {
+                $disk->delete($prefixWithSlash);
+                // juga try deleteDirectory
+                if (method_exists($disk, 'deleteDirectory')) {
+                    $disk->deleteDirectory($fullPath);
                 }
+                return back()->with('success', 'Folder (marker) berhasil dihapus!');
             }
         } catch (\Throwable $e) {
-            \Log::warning("exists() check failed for [$fullPath] or [$dirMarker]: " . $e->getMessage());
+            \Log::error("Single/marker delete failed for [$fullPath|$prefixWithSlash]: " . $e->getMessage());
+            return back()->with('error', 'Gagal menghapus: ' . $e->getMessage());
         }
 
         \Log::info("Nothing to delete for fullPath={$fullPath}");
         return back()->with('error', 'File/Folder tidak ditemukan atau sudah kosong. Periksa laravel.log untuk detail.');
     }
+
 
 
     // Buat folder
@@ -293,5 +371,325 @@ class FileController extends Controller
 
         return back()->with('success', 'Folder berhasil dibuat!');
     }
+
+    //Ini bagian TERBARU untuk move to trash
+    public function moveToTrash(Request $request, $path = null)
+{
+    $disk = Storage::disk('minio');
+    $path = urldecode($path ?? $request->input('path', ''));
+    $path = trim($path, '/');
+
+    $userPrefix = 'users/' . Auth::id();
+    // If path already includes user prefix, strip it
+    if (Str::startsWith($path, $userPrefix)) {
+        $path = trim(substr($path, strlen($userPrefix)), '/');
+    }
+
+    if ($path === '') {
+        return back()->with('error', 'Path tidak valid');
+    }
+
+    $sourcePrefix = $userPrefix . '/' . $path;
+    $trashPrefix = $userPrefix . '/.trash/' . $path; // simpan di users/{id}/.trash/<same-path>
+
+    try {
+        // Kumpulkan semua objek di bawah sourcePrefix (jika folder) atau single file
+        $objects = [];
+        try {
+            $objects = $disk->allFiles($sourcePrefix);
+        } catch (\Throwable $e) {
+            // allFiles kadang gagal jika path is file; fallback ke files()
+            try {
+                $objects = $disk->files($sourcePrefix);
+            } catch (\Throwable $e2) {
+                $objects = [];
+            }
+        }
+
+        if (empty($objects)) {
+            // mungkin single file path (exact)
+            if ($disk->exists($sourcePrefix)) {
+                $objects = [$sourcePrefix];
+            } else {
+                // try with trailing slash variants
+                $alt = rtrim($sourcePrefix, '/') . '/';
+                if ($disk->exists($alt)) {
+                    $objects = [$alt];
+                }
+            }
+        }
+
+        if (empty($objects)) {
+            return back()->with('error', 'Tidak ada objek ditemukan untuk dipindahkan.');
+        }
+
+        $moved = [];
+        $failed = [];
+
+        foreach ($objects as $obj) {
+            // hitung relative path after users/{id}/
+            $rel = ltrim(substr($obj, strlen($userPrefix)), '/'); // e.g. folder1/file.txt
+            $target = $userPrefix . '/.trash/' . $rel;
+
+            try {
+                // stream copy: buka sumber -> put ke target
+                $stream = $disk->readStream($obj);
+                if ($stream !== false) {
+                    $disk->put($target, $stream);
+                    if (is_resource($stream)) fclose($stream);
+                } else {
+                    // fallback copy via get/put
+                    $contents = $disk->get($obj);
+                    $disk->put($target, $contents);
+                }
+
+                // hapus sumber
+                $disk->delete($obj);
+
+                $moved[] = $obj;
+            } catch (\Throwable $e) {
+                \Log::error("MoveToTrash failed for $obj: " . $e->getMessage());
+                $failed[] = $obj;
+            }
+        }
+
+        // Optionally attempt to delete directory markers
+        if (method_exists($disk, 'deleteDirectory')) {
+            try {
+                $disk->deleteDirectory($sourcePrefix);
+            } catch (\Throwable $e) {
+                // ignore
+            }
+        }
+
+        $msg = '';
+        if (!empty($moved)) $msg .= 'Berhasil memindahkan ' . count($moved) . ' objek ke sampah. ';
+        if (!empty($failed)) $msg .= 'Gagal memindahkan ' . count($failed) . ' objek.';
+
+        if (!empty($failed)) {
+            \Log::error('MoveToTrash failed objects: ' . implode(', ', $failed));
+            return back()->with('error', $msg . ' Lihat laravel.log untuk detail.');
+        }
+
+        return back()->with('success', $msg);
+
+    } catch (\Throwable $e) {
+        \Log::error("moveToTrash error for [$sourcePrefix]: " . $e->getMessage());
+        return back()->with('error', 'Terjadi kesalahan saat memindahkan ke sampah.');
+    }
+}
+
+/**
+ * Show user's trash contents
+ */
+/**
+ * Show user's trash contents (browseable)
+ * Accepts optional folder path inside .trash
+ */
+public function trashIndex($folder = null)
+{
+    $disk = Storage::disk('minio');
+    $userPrefix = 'users/' . Auth::id();
+    $trashBase = trim($userPrefix . '/.trash', '/'); // users/{id}/.trash
+
+    // jika ada folder yang diminta, masuk ke dalamnya
+    $folder = $folder ? trim($folder, '/') : null;
+    $listPrefix = $trashBase . ($folder ? '/' . $folder : '');
+
+    // normalize: jika prefix kosong, pakai trashBase
+    $listPrefix = trim($listPrefix, '/');
+
+    // catch exceptions saat listing
+    try {
+        // ambil files & folders di level prefix (tidak recursive untuk directories)
+        $filesRaw = $disk->files($listPrefix) ?: [];
+        $foldersRaw = $disk->directories($listPrefix) ?: [];
+    } catch (\Throwable $e) {
+        // fallback ke allFiles jika provider behave differently
+        try {
+            $filesRaw = $disk->allFiles($listPrefix) ?: [];
+            $foldersRaw = $disk->directories($listPrefix) ?: [];
+        } catch (\Throwable $e2) {
+            $filesRaw = [];
+            $foldersRaw = [];
+            \Log::warning("trashIndex listing failed for [$listPrefix]: " . $e2->getMessage());
+        }
+    }
+
+    // convert full paths to relative paths inside .trash (mis. folder1/file.png)
+    $stripPrefix = $trashBase . '/';
+    $relFiles = array_map(function($p) use ($stripPrefix) {
+        return ltrim(Str::startsWith($p, $stripPrefix) ? substr($p, strlen($stripPrefix)) : $p, '/');
+    }, $filesRaw);
+
+    $relFolders = array_map(function($p) use ($stripPrefix) {
+        return ltrim(Str::startsWith($p, $stripPrefix) ? substr($p, strlen($stripPrefix)) : $p, '/');
+    }, $foldersRaw);
+
+    // Sort optionally
+    sort($relFolders);
+    sort($relFiles);
+
+    // currentFolder untuk breadcrumb (null untuk root .trash)
+    $currentFolder = $folder;
+
+    return view('files.sampah', [
+        'files' => $relFiles,
+        'folders' => $relFolders,
+        'currentFolder' => $currentFolder
+    ]);
+}
+
+
+/**
+ * Restore file/folder from trash back to user root (move)
+ */
+public function restoreFromTrash(Request $request, $path = null)
+{
+    $disk = Storage::disk('minio');
+    $path = urldecode($path ?? $request->input('path', ''));
+    $path = trim($path, '/');
+
+    $userPrefix = 'users/' . Auth::id();
+    $trashPrefix = $userPrefix . '/.trash/' . $path;
+    $targetPrefix = $userPrefix . '/' . $path;
+
+    // collect objects under trashPrefix
+    $objects = [];
+    try {
+        $objects = $disk->allFiles($trashPrefix);
+    } catch (\Throwable $e) {
+        $objects = $disk->files($trashPrefix) ?? [];
+    }
+
+    if (empty($objects)) {
+        // maybe single file
+        if ($disk->exists($trashPrefix)) {
+            $objects = [$trashPrefix];
+        } else {
+            return back()->with('error', 'Tidak ada objek ditemukan di sampah.');
+        }
+    }
+
+    $restored = [];
+    $failed = [];
+    foreach ($objects as $obj) {
+        try {
+            $rel = ltrim(substr($obj, strlen($userPrefix . '/.trash/')), '/');
+            $target = $userPrefix . '/' . $rel;
+
+            $stream = $disk->readStream($obj);
+            if ($stream !== false) {
+                $disk->put($target, $stream);
+                if (is_resource($stream)) fclose($stream);
+            } else {
+                $contents = $disk->get($obj);
+                $disk->put($target, $contents);
+            }
+
+            // hapus dari trash
+            $disk->delete($obj);
+            $restored[] = $obj;
+        } catch (\Throwable $e) {
+            \Log::error("Restore failed for $obj: " . $e->getMessage());
+            $failed[] = $obj;
+        }
+    }
+
+    if (!empty($failed)) {
+        \Log::error('Restore failed objects: ' . implode(', ', $failed));
+        return back()->with('error', 'Beberapa item gagal dipulihkan. Lihat laravel.log.');
+    }
+
+    return back()->with('success', 'Restore berhasil: ' . count($restored) . ' objek.');
+}
+
+/**
+ * Permanently delete file/folder from trash
+ */
+public function forceDeleteFromTrash(Request $request, $path = null)
+{
+    $disk = Storage::disk('minio');
+    $path = urldecode($path ?? $request->input('path', ''));
+    $path = trim($path, '/');
+
+    $userPrefix = 'users/' . Auth::id();
+    $trashPrefix = $userPrefix . '/.trash/' . $path;
+
+    // collect objects
+    $objects = [];
+    try {
+        $objects = $disk->allFiles($trashPrefix);
+    } catch (\Throwable $e) {
+        $objects = $disk->files($trashPrefix) ?? [];
+    }
+
+    if (empty($objects)) {
+        if ($disk->exists($trashPrefix)) {
+            $objects = [$trashPrefix];
+        } else {
+            return back()->with('error', 'Tidak ada item ditemukan untuk dihapus permanen.');
+        }
+    }
+
+    $deleted = [];
+    $failed = [];
+
+    foreach ($objects as $obj) {
+        try {
+            $disk->delete($obj);
+            if ($disk->exists($obj)) {
+                $failed[] = $obj;
+            } else {
+                $deleted[] = $obj;
+            }
+        } catch (\Throwable $e) {
+            \Log::error("Force delete failed for $obj: " . $e->getMessage());
+            $failed[] = $obj;
+        }
+    }
+
+    // attempt deleteDirectory cleanup
+    if (method_exists($disk, 'deleteDirectory')) {
+        try {
+            $disk->deleteDirectory($trashPrefix);
+        } catch (\Throwable $e) {
+            // ignore
+        }
+    }
+
+    if (!empty($failed)) {
+        \Log::error('Force delete failed objects: ' . implode(', ', $failed));
+        return back()->with('error', 'Beberapa objek gagal dihapus permanen.');
+    }
+
+    return back()->with('success', 'Berhasil menghapus permanen ' . count($deleted) . ' objek.');
+}
+
+public function previewTrash($path)
+{
+    $disk = Storage::disk('minio');
+    $path = urldecode($path);
+    $path = trim($path, '/');
+
+    $userPrefix = 'users/' . Auth::id();
+
+    // full path in minio
+    $fullPath = $userPrefix . '/.trash/' . $path;
+    $fullPath = trim($fullPath, '/');
+
+    if (!$disk->exists($fullPath)) {
+        abort(404, 'File tidak ditemukan di sampah');
+    }
+
+    try {
+        $file = $disk->get($fullPath);
+        $mime = $disk->mimeType($fullPath);
+        return response($file)->header('Content-Type', $mime);
+    } catch (\Throwable $e) {
+        \Log::error("previewTrash failed for [$fullPath]: " . $e->getMessage());
+        abort(500, 'Gagal membuka file');
+    }
+}
 
 }

@@ -7,19 +7,61 @@ services:
       dockerfile: Dockerfile
     container_name: cloud_app
     ports:
-      - "8000:8000"
-      - "5174:5174"
+      - "8000:8000"   # Laravel (artisan serve)
+      - "5174:5174"   # Vite dev server
     volumes:
-      - ./src:/var/www/html
+      - ./src:/var/www/html            # bind mount for dev
       - ./src/docker/php.ini:/usr/local/etc/php/conf.d/uploads.ini
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:8000
+
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: cloud_db
+      DB_USERNAME: root
+      DB_PASSWORD: root
+
+      # MinIO config for Laravel (optional)
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: admin123
+      AWS_BUCKET: mybucket
+      AWS_ENDPOINT: http://minio:9000
+      AWS_USE_PATH_STYLE_ENDPOINT: "true"
+
     depends_on:
       - mysql
       - minio
-    command: sh -c "npm run dev -- --port 5174 --host & php artisan serve --host=0.0.0.0 --port=8000"
+
+    command: >
+      bash -c "
+        # tunggu mysql ready (simple TCP check)
+        until bash -c \"cat < /dev/tcp/mysql/3306\" >/dev/null 2>&1; do
+          echo 'Waiting for MySQL...'; sleep 2;
+        done;
+        # install deps only if belum ada (dev)
+        cd /var/www/html;
+        if [ ! -d vendor ] || [ ! -f vendor/autoload.php ]; then
+          composer install --no-interaction --prefer-dist || true;
+        fi
+        if [ ! -d node_modules ]; then
+          npm install || true;
+        fi
+        if [ ! -f public/build/manifest.json ]; then
+          npm run build || true;
+        fi
+        php artisan migrate --force || true;
+        php artisan serve --host=0.0.0.0 --port=8000 &
+        npm run dev -- --host 0.0.0.0 --port 5174
+      "
+
 
   mysql:
     image: mysql:8
     container_name: cloud_mysql
+    restart: always
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: cloud_db
@@ -27,10 +69,16 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   minio:
     image: minio/minio
     container_name: cloud_minio
+    restart: always
     environment:
       MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: admin123
@@ -40,6 +88,23 @@ services:
       - "9000:9000"
       - "9001:9001"
     command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:9000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: cloud_phpmyadmin
+    depends_on:
+      - mysql
+    ports:
+      - "8080:80"
+    environment:
+      PMA_HOST: mysql
+      PMA_USER: root
+      PMA_PASSWORD: root
 
 volumes:
   mysql_data:

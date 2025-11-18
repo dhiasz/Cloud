@@ -16,15 +16,13 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/keepcloud/upload', [FileController::class, 'upload'])->name('upload');
     Route::post('/keepcloud/folder/create', [FileController::class, 'createFolder'])->name('folder.create');
     
-    
-   
 
         
     Route::get('/keepcloud/files/{folder?}', [FileController::class, 'index'])
     ->where('folder', '.*')
     ->name('files.index');
     
-Route::get('/keepcloud/folder', [FileController::class, 'folder'])
+    Route::get('/keepcloud/folder', [FileController::class, 'folder'])
     ->middleware('auth')
     ->name('files.folder');
 
@@ -37,7 +35,35 @@ Route::get('/keepcloud/folder', [FileController::class, 'folder'])
         ->where('filename', '.*')
         ->name('file.delete');
 
-    
+
+    // Move file/folder to trash (POST)
+    Route::post('/keepcloud/move-to-trash/{path?}', [FileController::class, 'moveToTrash'])
+        ->where('path', '.*')
+        ->name('files.moveToTrash');
+
+    // View trash
+    Route::get('/keepcloud/sampah/{folder?}', [FileController::class, 'trashIndex'])
+        ->where('folder', '.*')
+        ->name('files.trash');
+
+
+    // Restore file/folder from trash
+    Route::post('/keepcloud/restore/{path?}', [FileController::class, 'restoreFromTrash'])
+        ->where('path', '.*')
+        ->name('files.restore');
+
+    // Force delete (permanently) from trash
+    Route::delete('/keepcloud/trash/delete/{path?}', [FileController::class, 'forceDeleteFromTrash'])
+        ->where('path', '.*')
+        ->name('files.trash.delete');
+
+    // Preview file yang berada di dalam trash (browseable)
+    Route::get('/keepcloud/preview-trash/{path}', [FileController::class, 'previewTrash'])
+    ->where('path', '.*')
+    ->name('preview.trash');
+
+
+
     // Profile (default Breeze)
         Route::get('/keepcloud/profile', [ProfileController::class, 'edit'])->name('profile.edit');
         Route::patch('/keepcloud/profile', [ProfileController::class, 'update'])->name('profile.update');
