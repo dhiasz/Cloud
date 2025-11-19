@@ -665,7 +665,6 @@ public function forceDeleteFromTrash(Request $request, $path = null)
 
     return back()->with('success', 'Berhasil menghapus permanen ' . count($deleted) . ' objek.');
 }
-
 public function previewTrash($path)
 {
     $disk = Storage::disk('minio');
@@ -691,5 +690,4 @@ public function previewTrash($path)
         abort(500, 'Gagal membuka file');
     }
 }
-
 }

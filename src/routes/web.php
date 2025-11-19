@@ -63,7 +63,6 @@ Route::middleware(['auth'])->group(function () {
     ->name('preview.trash');
 
 
-
     // Profile (default Breeze)
         Route::get('/keepcloud/profile', [ProfileController::class, 'edit'])->name('profile.edit');
         Route::patch('/keepcloud/profile', [ProfileController::class, 'update'])->name('profile.update');
